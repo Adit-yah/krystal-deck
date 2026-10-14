@@ -16,6 +16,8 @@ export const CASSETTES = [
     shellAccent: '#42131c',
     synthPreset: 'neon-rain',
     bpm: 171,
+    streamUrl:
+      'gdstudio:netease:1406633327||https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/0c/c5/03/0cc503b5-9299-b207-a13c-ba5358733c56/mzaf_18217607061023109918.plus.aac.p.m4a',
     youtubeId: 'XwxLwG2_Sxk',
     backupYoutubeIds: ['2VzS2p2XkrQ', 'fHI8X4OXluQ', 'Htv0ibH8bO0'],
     durationSec: 200,
@@ -33,9 +35,11 @@ export const CASSETTES = [
     shellAccent: '#3b2814',
     synthPreset: 'dub-techno',
     bpm: 116,
+    streamUrl:
+      'gdstudio:netease:26349642||https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/72/53/10/725310b8-0e82-9d20-8898-0f1fc47b4cd9/mzaf_13147817334462660235.plus.aac.p.m4a',
     youtubeId: '5glDAaCaazc',
     backupYoutubeIds: ['HXEJjtBouRA', '5NV6Rdv1a3I', 'H75AFiLGd8Y'],
-    durationSec: 246,
+    durationSec: 248,
   },
   {
     id: 'as-it-was',
@@ -50,9 +54,11 @@ export const CASSETTES = [
     shellAccent: '#1c2d45',
     synthPreset: 'acid-prism',
     bpm: 174,
+    streamUrl:
+      'gdstudio:netease:1948620191||https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/67/10/16/67101606-3869-ca44-6c03-e13d6322cb51/mzaf_1135399237022217274.plus.aac.p.m4a',
     youtubeId: 'Qfm6nfz1QNQ',
     backupYoutubeIds: ['EsY5kRIBM8Y', 'CjIUVRei27g', '5icKSmNoB2Y'],
-    durationSec: 165,
+    durationSec: 167,
   },
   {
     id: 'sweater-weather',
@@ -67,6 +73,8 @@ export const CASSETTES = [
     shellAccent: '#261d3a',
     synthPreset: 'solar-drift',
     bpm: 124,
+    streamUrl:
+      'gdstudio:netease:26231595||https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/8c/37/20/8c372047-2727-8054-9411-0e4867643dd8/mzaf_10169659262182214119.plus.aac.p.m4a',
     youtubeId: 'tu8B4jxLrAY',
     backupYoutubeIds: ['7pzOBI3PD8E', '08WiUcJmnZc', 'UDVLn4Xvyz8'],
     durationSec: 240,

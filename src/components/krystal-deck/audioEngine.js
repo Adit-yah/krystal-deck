@@ -235,21 +235,154 @@ export class KrystalAudioEngine {
         }
       });
       this.streamAudioEl.addEventListener('error', () => {
-        // Automatic fallback to same-origin stream proxy if direct CDN stream is blocked
-        if (this._rawStreamUrl && !this._usingStreamProxy) {
+        // 1. If a gdstudio stream spec has a fallback direct stream after '||', switch to it on error
+        if (
+          this._rawStreamSpec &&
+          this._rawStreamSpec.includes('||') &&
+          !this._usingFallbackSpecUrl
+        ) {
+          const fallbackUrl = this._rawStreamSpec.split('||')[1];
+          if (fallbackUrl) {
+            this._usingFallbackSpecUrl = true;
+            this._rawStreamUrl = fallbackUrl;
+            this.streamAudioEl.src = fallbackUrl;
+            this.streamAudioEl.load();
+            if (
+              this.isPlaying &&
+              this.preset === 'custom-file' &&
+              this.customSourceType === 'stream'
+            ) {
+              this.streamAudioEl.muted = Boolean(this.muted);
+              this.streamAudioEl.volume = this.getEffectiveVolume();
+              this.streamAudioEl.play().catch(() => {});
+            }
+            return;
+          }
+        }
+        // 2. Automatic fallback to same-origin stream proxy if direct CDN stream is blocked
+        if (
+          this._rawStreamUrl &&
+          !this._rawStreamUrl.startsWith('data:') &&
+          !this._usingStreamProxy
+        ) {
           this._usingStreamProxy = true;
           const proxied = `/api/music-search?stream=${encodeURIComponent(this._rawStreamUrl)}`;
           this.streamAudioEl.src = proxied;
           this.streamAudioEl.load();
           if (this.isPlaying && this.preset === 'custom-file' && this.customSourceType === 'stream') {
-            this.streamAudioEl.muted = false;
-            this.streamAudioEl.volume = this.volume;
+            this.streamAudioEl.muted = Boolean(this.muted);
+            this.streamAudioEl.volume = this.getEffectiveVolume();
             this.streamAudioEl.play().catch(() => {});
           }
         }
       });
     }
     return this.streamAudioEl;
+  }
+
+  _getCachedDirectUrl(streamSpec) {
+    if (!streamSpec) return null;
+    if (!streamSpec.startsWith('gdstudio:')) return streamSpec;
+    if (!this._resolvedStreamCache) this._resolvedStreamCache = new Map();
+    const cached = this._resolvedStreamCache.get(streamSpec);
+    if (cached && cached.url && Date.now() - cached.ts < 12 * 60 * 1000) {
+      return cached.url;
+    }
+    return null;
+  }
+
+  async _resolvePlayableStreamUrl(streamSpec) {
+    if (!streamSpec) return null;
+    const cached = this._getCachedDirectUrl(streamSpec);
+    if (cached) return cached;
+
+    if (!this._inflightStreamPromises) this._inflightStreamPromises = new Map();
+    if (this._inflightStreamPromises.has(streamSpec)) {
+      return this._inflightStreamPromises.get(streamSpec);
+    }
+
+    const promise = (async () => {
+      const [specPart, fallbackUrl = ''] = String(streamSpec).split('||');
+      try {
+        let neteaseId = null;
+        if (specPart.startsWith('gdstudio:netease:')) {
+          neteaseId = specPart.slice('gdstudio:netease:'.length).trim();
+        } else if (specPart.startsWith('gdstudio:query:')) {
+          const query = specPart.slice('gdstudio:query:'.length).trim();
+          if (query) {
+            const sRes = await fetch(
+              `https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=${encodeURIComponent(query)}&count=6`
+            );
+            if (sRes.ok) {
+              const sJson = await sRes.json();
+              if (Array.isArray(sJson) && sJson.length > 0) {
+                const goodHit =
+                  sJson.find((item) => {
+                    if (!item || !item.url_id) return false;
+                    const txt = `${item.name || ''} ${(item.artist || []).join(' ')} ${item.album || ''}`.toLowerCase();
+                    return !/karaoke|instrumental|tribute|8-bit|ringtone|lullaby|originally performed/i.test(
+                      txt
+                    );
+                  }) || sJson[0];
+                if (goodHit?.url_id) {
+                  neteaseId = String(goodHit.url_id);
+                }
+              }
+            }
+          }
+        }
+
+        if (neteaseId) {
+          const uRes = await fetch(
+            `https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=${encodeURIComponent(neteaseId)}&br=320`
+          );
+          if (uRes.ok) {
+            const uJson = await uRes.json();
+            if (uJson?.url) {
+              const secureUrl = String(uJson.url).replace(/^http:\/\//i, 'https://');
+              if (!this._resolvedStreamCache) this._resolvedStreamCache = new Map();
+              this._resolvedStreamCache.set(streamSpec, {
+                url: secureUrl,
+                ts: Date.now(),
+              });
+              return secureUrl;
+            }
+          }
+        }
+      } catch {
+        // Fall through to fallbackUrl
+      }
+      return fallbackUrl || null;
+    })();
+
+    this._inflightStreamPromises.set(streamSpec, promise);
+    try {
+      return await promise;
+    } finally {
+      this._inflightStreamPromises.delete(streamSpec);
+    }
+  }
+
+  _applyResolvedStreamSpec(streamSpec, isTabHidden = false) {
+    this._resolvePlayableStreamUrl(streamSpec).then((resolvedUrl) => {
+      if (!resolvedUrl || this._rawStreamSpec !== streamSpec) return;
+      const el = this._ensureStreamAudioEl();
+      if (!el) return;
+      if (this._rawStreamUrl !== resolvedUrl) {
+        this._rawStreamUrl = resolvedUrl;
+        this._usingStreamProxy = false;
+        this._usingFallbackSpecUrl = false;
+        el.src = resolvedUrl;
+        el.load();
+      }
+      if (this.customSourceType === 'stream' && this.preset === 'custom-file') {
+        this._syncCustomTransport();
+      } else if (this._preloadingStream) {
+        el.muted = Boolean(this.muted);
+        el.volume = isTabHidden ? this.getEffectiveVolume() : 0;
+        el.play().catch(() => {});
+      }
+    });
   }
 
   /**
@@ -265,28 +398,48 @@ export class KrystalAudioEngine {
 
     if (preloadStreamUrl) {
       // If this exact stream is ALREADY loaded and active, do NOT set `_preloadingStream = true` (which would reset currentTime to 0!)
-      if (this._rawStreamUrl === preloadStreamUrl && this.customSourceType === 'stream') {
-        if (el && el.paused && this.isPlaying) {
-          el.muted = false;
-          el.volume = this.volume;
+      if (
+        (this._rawStreamSpec === preloadStreamUrl || this._rawStreamUrl === preloadStreamUrl) &&
+        this.customSourceType === 'stream'
+      ) {
+        if (el && el.paused && this.isPlaying && this._rawStreamUrl) {
+          el.muted = Boolean(this.muted);
+          el.volume = this.getEffectiveVolume();
           el.play().catch(() => {});
         }
         return;
       }
 
+      this._rawStreamSpec = preloadStreamUrl;
       this._preloadingStream = !isTabHidden;
       this._preloadingYouTube = false;
       this._scrubCursor = null;
       this._endHandledForTrack = false;
-      if (el) {
-        if (this._rawStreamUrl !== preloadStreamUrl) {
-          this._rawStreamUrl = preloadStreamUrl;
-          this._usingStreamProxy = false;
-          el.src = preloadStreamUrl;
+
+      const cachedDirectUrl = this._getCachedDirectUrl(preloadStreamUrl);
+      if (cachedDirectUrl) {
+        if (el) {
+          if (this._rawStreamUrl !== cachedDirectUrl) {
+            this._rawStreamUrl = cachedDirectUrl;
+            this._usingStreamProxy = false;
+            this._usingFallbackSpecUrl = false;
+            el.src = cachedDirectUrl;
+          }
+          el.muted = Boolean(this.muted);
+          el.volume = isTabHidden ? this.getEffectiveVolume() : 0;
+          el.play().catch(() => {});
         }
-        el.muted = false;
-        el.volume = isTabHidden ? this.volume : 0;
-        el.play().catch(() => {});
+      } else {
+        // Unlock the HTMLAudioElement synchronously inside the click gesture while the 320kbps MP3 URL resolves
+        if (el && !this._streamGestureUnlocked) {
+          this._streamGestureUnlocked = true;
+          this._rawStreamUrl =
+            'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+          el.src = this._rawStreamUrl;
+          el.volume = 0;
+          el.play().catch(() => {});
+        }
+        this._applyResolvedStreamSpec(preloadStreamUrl, isTabHidden);
       }
       return;
     }
@@ -399,6 +552,12 @@ export class KrystalAudioEngine {
 
     const effVol = this.getEffectiveVolume();
     if (activeEl) {
+      if (
+        activeEl === this.streamAudioEl &&
+        (!this._rawStreamUrl || this._rawStreamUrl.startsWith('data:'))
+      ) {
+        return;
+      }
       if (this.isPlaying) {
         if (activeEl === this.streamAudioEl && this._preloadingStream) {
           this._preloadingStream = false;
@@ -620,18 +779,29 @@ export class KrystalAudioEngine {
     }
 
     const el = this._ensureStreamAudioEl();
-    if (this._rawStreamUrl !== streamUrl) {
-      this._rawStreamUrl = streamUrl;
-      this._usingStreamProxy = false;
-      this._scrubCursor = null;
-      el.src = streamUrl;
-      el.load();
-    }
+    this._rawStreamSpec = streamUrl;
+    const cachedDirectUrl = this._getCachedDirectUrl(streamUrl);
 
-    this.customSourceType = 'stream';
-    this.hasCustomSong = true;
-    this.preset = 'custom-file';
-    this._syncCustomTransport();
+    if (cachedDirectUrl) {
+      if (this._rawStreamUrl !== cachedDirectUrl) {
+        this._rawStreamUrl = cachedDirectUrl;
+        this._usingStreamProxy = false;
+        this._usingFallbackSpecUrl = false;
+        this._scrubCursor = null;
+        el.src = cachedDirectUrl;
+        el.load();
+      }
+      this.customSourceType = 'stream';
+      this.hasCustomSong = true;
+      this.preset = 'custom-file';
+      this._syncCustomTransport();
+    } else {
+      this._scrubCursor = null;
+      this.customSourceType = 'stream';
+      this.hasCustomSong = true;
+      this.preset = 'custom-file';
+      this._applyResolvedStreamSpec(streamUrl, typeof document !== 'undefined' && document.hidden);
+    }
   }
 
   _ensureYouTubePlayerMounted(initialVideoId = 'XwxLwG2_Sxk') {
@@ -754,6 +924,10 @@ export class KrystalAudioEngine {
    *    (with automatic failover across `backupYoutubeIds` and `fallbackStreamUrl`!)
    */
   loadYouTubeVideo(videoId, fallbackStreamUrl = null, backupYoutubeIds = []) {
+    if (fallbackStreamUrl) {
+      this.loadRemoteAudioStream(fallbackStreamUrl);
+      return;
+    }
     this.ensureContext();
     if (this.audioEl) this.audioEl.pause();
     if (this.streamAudioEl && !this._preloadingStream) {

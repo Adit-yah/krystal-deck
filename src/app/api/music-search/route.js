@@ -79,25 +79,199 @@ function cleanYouTubeTitleAndArtist(rawTitle, channelName) {
   };
 }
 
-function isKaraokeOrCoverFake(name = '', artistStr = '', label = '', rawQuery = '') {
-  const combined = `${name} ${artistStr} ${label}`.toLowerCase();
+function resolveItunesSubQueries(rawQuery) {
+  const q = (rawQuery || '').trim();
+  const lower = q.toLowerCase().replace(/\s+/g, ' ');
+
+  if (
+    !q ||
+    lower === 'the weeknd daft punk dua lipa' ||
+    /^(global\s*pop|pop(\s*hits|\s*songs|\s*music)?|english\s*(pop|hits|songs)|famous(\s*songs|\s*hits)?|popular(\s*songs|\s*hits)?|top(\s*hits|\s*songs)?|trending(\s*songs|\s*hits)?|billboard(\s*hits|\s*hot\s*100)?|global(\s*hits|\s*songs)?|viral(\s*hits|\s*songs)?)$/i.test(
+      lower
+    )
+  ) {
+    return [
+      'The Weeknd',
+      'Bruno Mars',
+      'Dua Lipa',
+      'Billie Eilish',
+      'Sabrina Carpenter',
+      'Taylor Swift',
+      'Post Malone',
+      'Ariana Grande',
+    ];
+  }
+  if (
+    /^(r&b|rnb|r\s*&\s*b|r\s*and\s*b|soul)(\s*(hits|songs|music|mix|classics))?$/i.test(
+      lower
+    ) ||
+    lower.includes('r&b') ||
+    lower.includes('rnb')
+  ) {
+    return [
+      'The Weeknd',
+      'SZA',
+      'Bruno Mars',
+      'Rihanna',
+      'Frank Ocean',
+      'Chris Brown',
+      'Daniel Caesar',
+      'Usher',
+    ];
+  }
+  if (
+    /^(synthwave|retro|outrun|cyberpunk|vaporwave)(\s*(hits|songs|music|mix))?$/i.test(
+      lower
+    )
+  ) {
+    return ['The Weeknd', 'Daft Punk', 'Kavinsky', 'M83', 'Empire of the Sun'];
+  }
+  if (
+    /^(80s|90s|2000s|00s|classics|retro\s*hits)(\s*(hits|songs|music|pop|rock|classics))?$/i.test(
+      lower
+    )
+  ) {
+    return ['Michael Jackson', 'Prince', 'Tears for Fears', 'a-ha', 'Queen', 'Backstreet Boys'];
+  }
+  if (
+    /^(indie|chill|alternative|dream\s*pop|lofi|lo-fi|bedroom\s*pop)(\s*(hits|songs|music|mix|vibes))?$/i.test(
+      lower
+    )
+  ) {
+    return [
+      'Tame Impala',
+      'Arctic Monkeys',
+      'The Neighbourhood',
+      'Lana Del Rey',
+      'Glass Animals',
+      'Cigarettes After Sex',
+    ];
+  }
+  if (
+    /^(hip\s*hop|hip-hop|hiphop|rap|trap)(\s*(hits|songs|music|mix|bangers))?$/i.test(
+      lower
+    )
+  ) {
+    return [
+      'Travis Scott',
+      'Kendrick Lamar',
+      'Drake',
+      'Post Malone',
+      'Metro Boomin',
+      'Future',
+      'Eminem',
+      'Kanye West',
+    ];
+  }
+  if (/^(rock|classic\s*rock|alt\s*rock|metal)(\s*(hits|songs|music|classics))?$/i.test(lower)) {
+    return ['Linkin Park', 'Queen', 'Nirvana', 'Coldplay', 'Imagine Dragons', 'Arctic Monkeys'];
+  }
+  if (
+    /^(edm|electronic|house|dance|techno|club)(\s*(hits|songs|music|mix))?$/i.test(
+      lower
+    )
+  ) {
+    return ['Daft Punk', 'Calvin Harris', 'Avicii', 'Fred again', 'Zedd', 'David Guetta'];
+  }
+  if (/^(kpop|k-pop|korean)(\s*(hits|songs|music|pop))?$/i.test(lower)) {
+    return ['BTS', 'BLACKPINK', 'NewJeans', 'Jungkook', 'ROSÉ', 'Stray Kids'];
+  }
+  if (/^(latin|reggaeton|spanish)(\s*(hits|songs|music|pop))?$/i.test(lower)) {
+    return ['Bad Bunny', 'Karol G', 'Peso Pluma', 'Shakira', 'Feid', 'Rauw Alejandro'];
+  }
+  if (/^(afro|afrobeats|afrobeat)(\s*(hits|songs|music))?$/i.test(lower)) {
+    return ['Burna Boy', 'Rema', 'Tems', 'Wizkid', 'Ayra Starr', 'Asake'];
+  }
+  if (/^(punjabi|desi|bhangra)(\s*(hits|songs|music))?$/i.test(lower)) {
+    return ['Diljit Dosanjh', 'Karan Aujla', 'AP Dhillon', 'Shubh', 'Sidhu Moose Wala'];
+  }
+  if (/^(bollywood|hindi|indian)(\s*(hits|songs|music|pop))?$/i.test(lower)) {
+    return ['Arijit Singh', 'Pritam', 'Atif Aslam', 'Shreya Ghoshal', 'AR Rahman', 'KK'];
+  }
+
+  // Strip trailing/leading generic filler words like "hits", "songs", "best", "top" so iTunes matches studio albums
+  const cleaned = q
+    .replace(/\b(hits|hit|songs|song|tracks|track|music|playlist|mix|top|best|popular|famous|global)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return [cleaned.length >= 2 ? cleaned : q];
+}
+
+function expandCategorySearchQuery(rawQuery) {
+  const subs = resolveItunesSubQueries(rawQuery);
+  return subs[0] || rawQuery || 'The Weeknd';
+}
+
+function normalizeSongTitleKey(title = '') {
+  return String(title)
+    .toLowerCase()
+    .replace(/[（\[]/g, '(')
+    .replace(/[）\]]/g, ')')
+    .replace(/\s*\((?!.*?\bremix\b).*?\)\s*/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isKaraokeOrCoverFake(
+  name = '',
+  artistStr = '',
+  label = '',
+  rawQuery = '',
+  language = '',
+  hiResImg = ''
+) {
+  const normName = String(name).replace(/[（]/g, '(').replace(/[）]/g, ')');
+  const combined = `${normName} ${artistStr} ${label}`.toLowerCase();
   const qLower = (rawQuery || '').toLowerCase();
   if (
+    String(language).toLowerCase() === 'instrumental' &&
+    !qLower.includes('instrumental')
+  ) {
+    return true;
+  }
+  if (
+    hiResImg &&
+    String(hiResImg).toLowerCase().includes('-instrumental-') &&
+    !qLower.includes('instrumental')
+  ) {
+    return true;
+  }
+  if (
     combined.includes('karaoke') ||
+    combined.includes('kidz bop') ||
     combined.includes('originally performed') ||
     combined.includes('originally perfomed') ||
+    combined.includes('made famous by') ||
+    combined.includes('in the style of') ||
     combined.includes('8-bit') ||
     combined.includes('ringtone') ||
     combined.includes('tribute to') ||
     combined.includes('covers culture') ||
+    combined.includes('pop covers') ||
     combined.includes('piano instrumental') ||
     combined.includes('lullaby version') ||
-    combined.includes('ukulele bros')
+    combined.includes('salsa version') ||
+    combined.includes('salsa versión') ||
+    combined.includes('bachata version') ||
+    combined.includes('ukulele bros') ||
+    combined.includes('sound tower') ||
+    combined.includes('sunset roses') ||
+    combined.includes('caletta remixes') ||
+    combined.includes('sell your music') ||
+    combined.includes('tallions') ||
+    combined.includes('hafizur rahman') ||
+    combined.includes('7thcloud') ||
+    (!qLower.includes('cover') &&
+      (/\bcover\b/i.test(artistStr) ||
+        /\bcover\b/i.test(label) ||
+        /\((?:[^)]*\bcover\b[^)]*)\)/i.test(normName) ||
+        /\[(?:[^\]]*\bcover\b[^\]]*)\]/i.test(normName)))
   ) {
     return true;
   }
-  // Filter unrequested nightcore / hardstyle / ambient / slowed covers unless the user searched for them
-  const remixTags = ['nightcore', 'hardstyle', 'ambient version', 'slowed', 'sped up', 'lofi flip'];
+  const remixTags = ['nightcore', 'hardstyle', 'ambient version', 'slowed', 'sped up', 'lofi flip', 'cover.lofi'];
   for (const tag of remixTags) {
     if (combined.includes(tag) && !qLower.includes(tag)) {
       return true;
@@ -140,7 +314,7 @@ async function fetchImageAsDataUrl(imgUrl) {
 async function searchSaavnFullTracks(query) {
   try {
     const res = await fetch(
-      `https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&limit=12`,
+      `https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&limit=14`,
       { headers: { 'User-Agent': USER_AGENT } }
     );
     if (!res.ok) return [];
@@ -157,8 +331,28 @@ async function searchSaavnFullTracks(query) {
       const artistList =
         item.artists?.primary?.map((a) => decodeHtmlEntities(a.name)).filter(Boolean) || [];
       const artist = artistList.join(', ') || 'Featured Artist';
+      const album = decodeHtmlEntities(item.album?.name || '');
 
-      if (isKaraokeOrCoverFake(title, artist, item.label || '', query)) continue;
+      const images = Array.isArray(item.image) ? item.image : [];
+      const hiResImg =
+        images.find((im) => im.quality === '500x500')?.url ||
+        images[images.length - 1]?.url ||
+        null;
+      const thumbImg =
+        images.find((im) => im.quality === '150x150')?.url || hiResImg;
+
+      if (
+        isKaraokeOrCoverFake(
+          title,
+          artist,
+          `${item.label || ''} ${album}`,
+          query,
+          item.language,
+          hiResImg
+        )
+      ) {
+        continue;
+      }
 
       const downloads = Array.isArray(item.downloadUrl) ? item.downloadUrl : [];
       const bestStream =
@@ -169,19 +363,11 @@ async function searchSaavnFullTracks(query) {
 
       if (!bestStream) continue;
 
-      const images = Array.isArray(item.image) ? item.image : [];
-      const hiResImg =
-        images.find((im) => im.quality === '500x500')?.url ||
-        images[images.length - 1]?.url ||
-        null;
-      const thumbImg =
-        images.find((im) => im.quality === '150x150')?.url || hiResImg;
-
       tracks.push({
         id: `saavn-${item.id}`,
         title,
         artist,
-        album: decodeHtmlEntities(item.album?.name || ''),
+        album,
         coverUrl: hiResImg,
         thumbUrl: thumbImg,
         streamUrl: bestStream,
@@ -291,12 +477,12 @@ async function searchYouTubeFullTracks(query) {
 }
 
 /**
- * 3. Fetch Square High-Res 600x600 Album Cover Art from iTunes to enrich YouTube tracks
+ * 3. Fetch Official Apple Music / iTunes Catalog (100% Ad-Free Direct AAC Streams + 600x600 Studio Art)
  */
-async function fetchItunesArtworkLookup(query) {
+async function fetchSingleItunesQuery(term, limit = 15) {
   try {
     const res = await fetch(
-      `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=10`,
+      `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=${limit}`,
       { headers: { 'User-Agent': USER_AGENT } }
     );
     if (!res.ok) return [];
@@ -307,11 +493,183 @@ async function fetchItunesArtworkLookup(query) {
   }
 }
 
+async function fetchItunesCatalogLookup(rawQuery) {
+  const subQueries = resolveItunesSubQueries(rawQuery);
+
+  if (subQueries.length > 1) {
+    const buckets = await Promise.all(
+      subQueries.map((sq) => fetchSingleItunesQuery(sq, 5))
+    );
+    const interleaved = [];
+    const seenTitleKeys = new Set();
+    const maxLen = Math.max(...buckets.map((b) => b.length), 0);
+    for (let row = 0; row < maxLen; row++) {
+      for (let col = 0; col < buckets.length; col++) {
+        const it = buckets[col][row];
+        if (!it || !it.previewUrl) continue;
+        if (
+          isKaraokeOrCoverFake(
+            it.trackName,
+            it.artistName,
+            it.collectionName,
+            rawQuery
+          )
+        ) {
+          continue;
+        }
+        const titleKey = normalizeSongTitleKey(it.trackName);
+        if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+        seenTitleKeys.add(titleKey);
+        interleaved.push(it);
+      }
+    }
+    return interleaved;
+  }
+
+  const primaryTerm = subQueries[0] || rawQuery || 'The Weeknd';
+  const rawList = await fetchSingleItunesQuery(primaryTerm, 20);
+  const deduped = [];
+  const seenTitleKeys = new Set();
+
+  for (const it of rawList) {
+    if (!it || !it.previewUrl) continue;
+    if (
+      isKaraokeOrCoverFake(
+        it.trackName,
+        it.artistName,
+        it.collectionName,
+        rawQuery
+      )
+    ) {
+      continue;
+    }
+    const titleKey = normalizeSongTitleKey(it.trackName);
+    if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+    seenTitleKeys.add(titleKey);
+    deduped.push(it);
+  }
+
+  // If the user searched a specific song title (like "Die With A Smile") and title-deduplication
+  // stripped out cover versions leaving < 6 unique tracks, backfill with official hits by the primary artist!
+  if (deduped.length > 0 && deduped.length < 6) {
+    const topArtistRaw = deduped[0].artistName || '';
+    const artistParts = topArtistRaw
+      .split(/[,&]|feat\.|ft\./i)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 2)
+      .slice(0, 2);
+
+    if (artistParts.length > 0) {
+      const extraBuckets = await Promise.all(
+        artistParts.map((ap) => fetchSingleItunesQuery(ap, 8))
+      );
+      for (const bucket of extraBuckets) {
+        for (const it of bucket) {
+          if (!it || !it.previewUrl) continue;
+          if (
+            isKaraokeOrCoverFake(
+              it.trackName,
+              it.artistName,
+              it.collectionName,
+              rawQuery
+            )
+          ) {
+            continue;
+          }
+          const titleKey = normalizeSongTitleKey(it.trackName);
+          if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+          seenTitleKeys.add(titleKey);
+          deduped.push(it);
+        }
+      }
+    }
+  }
+
+  return deduped;
+}
+
+/**
+ * 4. Fetch Global Full-Length 320kbps Catalog from NetEase (`music-api.gdstudio.xyz`)
+ * Covers songs missing from US iTunes slices (e.g., Blinding Lights, House of Balloons, FE!N, Timeless)
+ * and pre-populates exact `gdstudio:netease:<id>` stream specs for instant 320kbps playback.
+ */
+async function searchNeteaseFullTracks(query, rawQuery) {
+  try {
+    const res = await fetch(
+      `https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=${encodeURIComponent(query)}&count=12&pages=1`,
+      { headers: { 'User-Agent': USER_AGENT } }
+    );
+    if (!res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+
+    const tracks = [];
+    const seenTitleKeys = new Set();
+
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      const neteaseId = item?.url_id || item?.id;
+      if (!neteaseId) continue;
+
+      const title = decodeHtmlEntities(item.name || '').trim();
+      const artist = Array.isArray(item.artist)
+        ? item.artist.map((a) => decodeHtmlEntities(a)).filter(Boolean).join(', ')
+        : decodeHtmlEntities(String(item.artist || 'Featured Artist'));
+      const album = decodeHtmlEntities(item.album || '').trim();
+
+      if (!title || isKaraokeOrCoverFake(title, artist, album, rawQuery)) {
+        continue;
+      }
+
+      const titleKey = normalizeSongTitleKey(title);
+      if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+      seenTitleKeys.add(titleKey);
+
+      tracks.push({
+        id: `netease-${neteaseId}`,
+        neteaseId: String(neteaseId),
+        picId: item.pic_id ? String(item.pic_id) : null,
+        title,
+        artist,
+        album,
+        coverUrl: null,
+        thumbUrl: null,
+        streamUrl: `gdstudio:netease:${neteaseId}`,
+        youtubeId: null,
+        backupYoutubeIds: [],
+        durationSec: 215,
+        fullTrackDurationSec: 215,
+        sourceType: 'online',
+      });
+    }
+    return tracks;
+  } catch {
+    return [];
+  }
+}
+
+async function resolveNeteasePicUrl(picId) {
+  if (!picId) return null;
+  try {
+    const res = await fetch(
+      `https://music-api.gdstudio.xyz/api.php?types=pic&source=netease&id=${encodeURIComponent(picId)}&size=500`,
+      { headers: { 'User-Agent': USER_AGENT } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.url && typeof data.url === 'string' ? data.url : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * GET /api/music-search?q=<search query>
- * Returns FULL-LENGTH songs (3–6 minutes long) by combining:
- * 1. Direct 320kbps full-length MP4/AAC streams (JioSaavn)
- * 2. Full-length YouTube Audio/Lyric tracks with automatic multi-videoId failover + 600x600 album art
+ * Returns 100% AD-FREE full-length 320kbps audio streams by combining:
+ * 1. Official Apple Music / iTunes catalog upgraded to full-length 320kbps streams
+ * 2. NetEase global catalog (captures tracks missing from regional iTunes slices)
+ * 3. Verified JioSaavn 320kbps full-length streams
+ * 4. Enriched YouTube tracks upgraded to full-length 320kbps streams
  */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -351,18 +709,149 @@ export async function GET(request) {
     }
   }
 
-  // 2. Search Full-Length Online Songs
+  // 2. Search Online Songs
   const rawQuery = (searchParams.get('q') || '').trim();
-  const query = rawQuery || 'The Weeknd Daft Punk Dua Lipa Coldplay';
+  const subQueries = resolveItunesSubQueries(rawQuery);
+  const query = subQueries[0] || rawQuery || 'The Weeknd';
 
   try {
-    const [saavnTracks, ytTracks, itunesMeta] = await Promise.all([
+    const [rawSaavnTracks, ytTracks, itunesMeta, neteaseTracks] = await Promise.all([
       searchSaavnFullTracks(query),
       searchYouTubeFullTracks(query),
-      fetchItunesArtworkLookup(query),
+      fetchItunesCatalogLookup(rawQuery),
+      searchNeteaseFullTracks(query, rawQuery),
     ]);
 
-    // Enrich YouTube full tracks with crisp 600x600 square album artwork from iTunes when matched
+    // Convert official iTunes catalog entries into first-class ad-free full-length playable tracks
+    const itunesTracks = [];
+    for (let i = 0; i < itunesMeta.length; i++) {
+      const it = itunesMeta[i];
+      if (!it.previewUrl) continue;
+      const hiRes = (it.artworkUrl100 || '').replace('100x100bb', '600x600bb');
+      const fullDurSec = Math.max(90, Math.round((it.trackTimeMillis || 210000) / 1000));
+      const trackTitle = it.trackName || 'Track';
+      const trackArtist = it.artistName || 'Artist';
+
+      // Check if NetEase search already returned the exact song ID so we don't even need a search step on play
+      const matchedNetease = neteaseTracks.find(
+        (nt) =>
+          (normalizeSongTitleKey(nt.title) === normalizeSongTitleKey(trackTitle) ||
+            nt.title.toLowerCase().includes(trackTitle.toLowerCase()) ||
+            trackTitle.toLowerCase().includes(nt.title.toLowerCase())) &&
+          artistsOverlap(nt.artist, trackArtist)
+      );
+
+      const streamSpec = matchedNetease
+        ? `gdstudio:netease:${matchedNetease.neteaseId}||${it.previewUrl}`
+        : `gdstudio:query:${trackTitle} ${trackArtist}||${it.previewUrl}`;
+
+      itunesTracks.push({
+        id: `itunes-${it.trackId || i}`,
+        title: trackTitle,
+        artist: trackArtist,
+        album: it.collectionName || '',
+        coverUrl: hiRes || it.artworkUrl100,
+        thumbUrl: it.artworkUrl100,
+        streamUrl: streamSpec,
+        youtubeId: null,
+        backupYoutubeIds: [],
+        durationSec: fullDurSec,
+        fullTrackDurationSec: fullDurSec,
+        sourceType: 'online',
+      });
+    }
+
+    // Filter out Saavn knockoff covers when iTunes has official tracks
+    const allAllowedArtistQuery = subQueries.join(' ');
+    const saavnTracks = rawSaavnTracks.filter((st) => {
+      if (
+        itunesTracks.length > 0 &&
+        !itunesTracks.some((it) => artistsOverlap(st.artist, it.artist)) &&
+        !artistsOverlap(st.artist, allAllowedArtistQuery)
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    // Upgrade iTunes tracks to direct 320kbps Saavn stream whenever BOTH title & artist match
+    for (const it of itunesTracks) {
+      const matchedSaavn = saavnTracks.find(
+        (st) =>
+          (st.title.toLowerCase().includes(it.title.toLowerCase()) ||
+            it.title.toLowerCase().includes(st.title.toLowerCase())) &&
+          artistsOverlap(st.artist, it.artist)
+      );
+      if (matchedSaavn) {
+        it.streamUrl = matchedSaavn.streamUrl;
+        it.durationSec = matchedSaavn.durationSec;
+        it.id = matchedSaavn.id;
+      }
+    }
+
+    // Enrich NetEase tracks that were missing from US iTunes (e.g. Blinding Lights, House of Balloons, FE!N)
+    const unmatchedNetease = [];
+    for (const nt of neteaseTracks) {
+      const alreadyInItunes = itunesTracks.some(
+        (it) =>
+          normalizeSongTitleKey(it.title) === normalizeSongTitleKey(nt.title) &&
+          artistsOverlap(it.artist, nt.artist)
+      );
+      if (alreadyInItunes) continue;
+
+      // Try matching artwork/duration from YouTube or same-artist iTunes results first
+      const ytMatch = ytTracks.find(
+        (yt) =>
+          (yt.title.toLowerCase().includes(nt.title.toLowerCase()) ||
+            nt.title.toLowerCase().includes(yt.title.toLowerCase())) &&
+          artistsOverlap(nt.artist, `${yt.artist} ${yt.title}`)
+      );
+      const sameArtistItunes = itunesMeta.find(
+        (it) =>
+          it.artworkUrl100 &&
+          artistsOverlap(nt.artist, it.artistName || '') &&
+          (!nt.album ||
+            (it.collectionName || '').toLowerCase().includes(nt.album.toLowerCase()) ||
+            nt.album.toLowerCase().includes((it.collectionName || '').toLowerCase()))
+      );
+
+      if (ytMatch?.durationSec) {
+        nt.durationSec = ytMatch.durationSec;
+        nt.fullTrackDurationSec = ytMatch.durationSec;
+        nt.youtubeId = ytMatch.youtubeId;
+        nt.backupYoutubeIds = ytMatch.backupYoutubeIds;
+      }
+
+      if (sameArtistItunes?.artworkUrl100) {
+        nt.coverUrl = sameArtistItunes.artworkUrl100.replace('100x100bb', '600x600bb');
+        nt.thumbUrl = sameArtistItunes.artworkUrl100;
+      } else if (ytMatch?.coverUrl) {
+        nt.coverUrl = ytMatch.coverUrl;
+        nt.thumbUrl = ytMatch.thumbUrl;
+      }
+
+      if (sameArtistItunes?.previewUrl) {
+        nt.streamUrl = `gdstudio:netease:${nt.neteaseId}||${sameArtistItunes.previewUrl}`;
+      }
+
+      unmatchedNetease.push(nt);
+    }
+
+    // Resolve official 500x500 NetEase album cover for top unmatched NetEase tracks that still need cover art
+    const needsPicResolve = unmatchedNetease.filter((nt) => !nt.coverUrl && nt.picId).slice(0, 4);
+    if (needsPicResolve.length > 0) {
+      await Promise.all(
+        needsPicResolve.map(async (nt) => {
+          const picUrl = await resolveNeteasePicUrl(nt.picId);
+          if (picUrl) {
+            nt.coverUrl = picUrl;
+            nt.thumbUrl = picUrl;
+          }
+        })
+      );
+    }
+
+    // Enrich YouTube tracks with crisp 600x600 square album artwork AND full-length 320kbps gdstudio streamUrl!
     const enrichedYtTracks = ytTracks.map((yt) => {
       const normTitle = yt.title.toLowerCase();
       const artMatch =
@@ -377,76 +866,107 @@ export async function GET(request) {
           const itTitle = (it.trackName || '').toLowerCase();
           return normTitle.includes(itTitle) || itTitle.includes(normTitle);
         });
-      if (artMatch?.artworkUrl100) {
-        const hiRes = artMatch.artworkUrl100.replace('100x100bb', '600x600bb');
-        return {
-          ...yt,
-          coverUrl: hiRes,
-          thumbUrl: artMatch.artworkUrl100,
-          album: artMatch.collectionName || yt.album,
-        };
-      }
-      return yt;
+      const resolvedTitle = artMatch?.trackName || yt.title;
+      const resolvedArtist = artMatch?.artistName || yt.artist;
+      const fullDur =
+        yt.durationSec ||
+        Math.max(90, Math.round((artMatch?.trackTimeMillis || 210000) / 1000));
+      const fallbackPreview = artMatch?.previewUrl || '';
+      const hiRes = artMatch?.artworkUrl100
+        ? artMatch.artworkUrl100.replace('100x100bb', '600x600bb')
+        : yt.coverUrl;
+      return {
+        ...yt,
+        title: resolvedTitle,
+        artist: resolvedArtist,
+        coverUrl: hiRes,
+        thumbUrl: artMatch?.artworkUrl100 || yt.thumbUrl,
+        album: artMatch?.collectionName || yt.album,
+        streamUrl:
+          yt.streamUrl ||
+          `gdstudio:query:${resolvedTitle} ${resolvedArtist}||${fallbackPreview}`,
+        durationSec: fullDur,
+        fullTrackDurationSec: fullDur,
+        sourceType: 'online',
+      };
     });
 
-    // Attach a matching YouTube videoId to Saavn tracks ONLY when BOTH title and artist match!
-    for (const st of saavnTracks) {
+    // Attach a matching YouTube videoId to Saavn/iTunes tracks when BOTH title and artist match
+    for (const st of [...saavnTracks, ...itunesTracks]) {
       const matchYt = enrichedYtTracks.find(
         (yt) =>
           (yt.title.toLowerCase().includes(st.title.toLowerCase()) ||
-            st.title.toLowerCase().includes(yt.title.toLowerCase()) ||
-            yt.artist.toLowerCase().includes(st.title.toLowerCase())) &&
+            st.title.toLowerCase().includes(yt.title.toLowerCase())) &&
           artistsOverlap(st.artist, `${yt.artist} ${yt.title}`)
       );
       if (matchYt) {
         st.youtubeId = matchYt.youtubeId;
         st.backupYoutubeIds = matchYt.backupYoutubeIds;
-        if (!matchYt.streamUrl) {
+        if (st.id.startsWith('saavn-')) {
           matchYt.streamUrl = st.streamUrl;
+          matchYt.durationSec = st.durationSec;
+          matchYt.sourceType = 'online';
         }
       }
     }
 
-    // Determine whether each track is an official artist match (matches query, iTunes artist, or cross-verified YouTube/Saavn artist)
-    const isOfficialArtistMatch = (t) => {
-      if (artistsOverlap(t.artist, query)) return true;
-      if (itunesMeta.some((it) => artistsOverlap(t.artist, it.artistName || ''))) return true;
-      if (
-        t.sourceType === 'online' &&
-        enrichedYtTracks.some((yt) => artistsOverlap(t.artist, `${yt.artist} ${yt.title}`))
-      ) {
-        return true;
-      }
-      return false;
-    };
-
-    // Merge full-length tracks without duplicates
+    // Merge ad-free full-length official tracks (iTunes + NetEase + verified Saavn + enriched YT) without duplicates
     const combined = [];
     const seenKeys = new Set();
-    for (const item of [...saavnTracks, ...enrichedYtTracks]) {
-      const key = `${item.title.toLowerCase().slice(0, 14)}|${item.artist.toLowerCase().slice(0, 10)}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
+    const titleCounts = new Map();
+    for (const item of [...itunesTracks, ...unmatchedNetease, ...saavnTracks, ...enrichedYtTracks]) {
+      const titleKey = normalizeSongTitleKey(item.title);
+      const artistKey = item.artist
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 12);
+      const pairKey = `${titleKey}|${artistKey}`;
+      const curCount = titleCounts.get(titleKey) || 0;
+      if (!seenKeys.has(pairKey) && curCount < 2) {
+        seenKeys.add(pairKey);
+        titleCounts.set(titleKey, curCount + 1);
         combined.push(item);
       }
     }
 
-    // Sort so official artist matches appear FIRST, with direct 320kbps streams prioritized when artist matches
+    // Sort so exact title matches (for specific song searches) and tracks with direct ad-free streamUrl appear FIRST
+    const isSpecificQuery = subQueries.length === 1 && Boolean(rawQuery);
+    const qNorm = isSpecificQuery ? normalizeSongTitleKey(query) : '';
     combined.sort((a, b) => {
-      const aOfficial = isOfficialArtistMatch(a);
-      const bOfficial = isOfficialArtistMatch(b);
-      if (aOfficial !== bOfficial) return aOfficial ? -1 : 1;
+      const aHasStream = Boolean(a.streamUrl);
+      const bHasStream = Boolean(b.streamUrl);
+      if (aHasStream !== bHasStream) return aHasStream ? -1 : 1;
+
+      if (qNorm.length >= 2) {
+        const aExactTitle = normalizeSongTitleKey(a.title).includes(qNorm);
+        const bExactTitle = normalizeSongTitleKey(b.title).includes(qNorm);
+        if (aExactTitle !== bExactTitle) return aExactTitle ? -1 : 1;
+
+        if (aExactTitle && bExactTitle && !qNorm.includes('remix')) {
+          const aIsRemix = /\bremix\b/i.test(a.title);
+          const bIsRemix = /\bremix\b/i.test(b.title);
+          if (aIsRemix !== bIsRemix) return aIsRemix ? 1 : -1;
+        }
+      }
+
+      const aMatch =
+        artistsOverlap(a.artist, allAllowedArtistQuery) ||
+        (rawQuery && a.title.toLowerCase().includes(rawQuery.toLowerCase()));
+      const bMatch =
+        artistsOverlap(b.artist, allAllowedArtistQuery) ||
+        (rawQuery && b.title.toLowerCase().includes(rawQuery.toLowerCase()));
+      if (aMatch !== bMatch) return aMatch ? -1 : 1;
       return 0;
     });
 
-    const finalResults = combined.slice(0, 16).map((item, idx) => ({
+    const finalResults = combined.slice(0, 24).map((item, idx) => ({
       ...item,
       accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
     }));
 
     return NextResponse.json({
       ok: true,
-      query,
+      query: rawQuery || query,
       results: finalResults,
     });
   } catch (err) {

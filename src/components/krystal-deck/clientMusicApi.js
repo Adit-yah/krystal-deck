@@ -247,17 +247,408 @@ export function parseSharedDeckFromUrl() {
 /**
  * Direct client-side online music search fallback (used automatically on GitHub Pages where `/api/music-search` is static/unavailable).
  */
+function resolveItunesSubQueries(rawQuery) {
+  const q = (rawQuery || '').trim();
+  const lower = q.toLowerCase().replace(/\s+/g, ' ');
+
+  if (
+    !q ||
+    lower === 'the weeknd daft punk dua lipa' ||
+    /^(global\s*pop|pop(\s*hits|\s*songs|\s*music)?|english\s*(pop|hits|songs)|famous(\s*songs|\s*hits)?|popular(\s*songs|\s*hits)?|top(\s*hits|\s*songs)?|trending(\s*songs|\s*hits)?|billboard(\s*hits|\s*hot\s*100)?|global(\s*hits|\s*songs)?|viral(\s*hits|\s*songs)?)$/i.test(
+      lower
+    )
+  ) {
+    return [
+      'The Weeknd',
+      'Bruno Mars',
+      'Dua Lipa',
+      'Billie Eilish',
+      'Sabrina Carpenter',
+      'Taylor Swift',
+      'Post Malone',
+      'Ariana Grande',
+    ];
+  }
+  if (
+    /^(r&b|rnb|r\s*&\s*b|r\s*and\s*b|soul)(\s*(hits|songs|music|mix|classics))?$/i.test(
+      lower
+    ) ||
+    lower.includes('r&b') ||
+    lower.includes('rnb')
+  ) {
+    return [
+      'The Weeknd',
+      'SZA',
+      'Bruno Mars',
+      'Rihanna',
+      'Frank Ocean',
+      'Chris Brown',
+      'Daniel Caesar',
+      'Usher',
+    ];
+  }
+  if (
+    /^(synthwave|retro|outrun|cyberpunk|vaporwave)(\s*(hits|songs|music|mix))?$/i.test(
+      lower
+    )
+  ) {
+    return ['The Weeknd', 'Daft Punk', 'Kavinsky', 'M83', 'Empire of the Sun'];
+  }
+  if (
+    /^(80s|90s|2000s|00s|classics|retro\s*hits)(\s*(hits|songs|music|pop|rock|classics))?$/i.test(
+      lower
+    )
+  ) {
+    return ['Michael Jackson', 'Prince', 'Tears for Fears', 'a-ha', 'Queen', 'Backstreet Boys'];
+  }
+  if (
+    /^(indie|chill|alternative|dream\s*pop|lofi|lo-fi|bedroom\s*pop)(\s*(hits|songs|music|mix|vibes))?$/i.test(
+      lower
+    )
+  ) {
+    return [
+      'Tame Impala',
+      'Arctic Monkeys',
+      'The Neighbourhood',
+      'Lana Del Rey',
+      'Glass Animals',
+      'Cigarettes After Sex',
+    ];
+  }
+  if (
+    /^(hip\s*hop|hip-hop|hiphop|rap|trap)(\s*(hits|songs|music|mix|bangers))?$/i.test(
+      lower
+    )
+  ) {
+    return [
+      'Travis Scott',
+      'Kendrick Lamar',
+      'Drake',
+      'Post Malone',
+      'Metro Boomin',
+      'Future',
+      'Eminem',
+      'Kanye West',
+    ];
+  }
+  if (/^(rock|classic\s*rock|alt\s*rock|metal)(\s*(hits|songs|music|classics))?$/i.test(lower)) {
+    return ['Linkin Park', 'Queen', 'Nirvana', 'Coldplay', 'Imagine Dragons', 'Arctic Monkeys'];
+  }
+  if (
+    /^(edm|electronic|house|dance|techno|club)(\s*(hits|songs|music|mix))?$/i.test(
+      lower
+    )
+  ) {
+    return ['Daft Punk', 'Calvin Harris', 'Avicii', 'Fred again', 'Zedd', 'David Guetta'];
+  }
+  if (/^(kpop|k-pop|korean)(\s*(hits|songs|music|pop))?$/i.test(lower)) {
+    return ['BTS', 'BLACKPINK', 'NewJeans', 'Jungkook', 'ROSÉ', 'Stray Kids'];
+  }
+  if (/^(latin|reggaeton|spanish)(\s*(hits|songs|music|pop))?$/i.test(lower)) {
+    return ['Bad Bunny', 'Karol G', 'Peso Pluma', 'Shakira', 'Feid', 'Rauw Alejandro'];
+  }
+  if (/^(afro|afrobeats|afrobeat)(\s*(hits|songs|music))?$/i.test(lower)) {
+    return ['Burna Boy', 'Rema', 'Tems', 'Wizkid', 'Ayra Starr', 'Asake'];
+  }
+  if (/^(punjabi|desi|bhangra)(\s*(hits|songs|music))?$/i.test(lower)) {
+    return ['Diljit Dosanjh', 'Karan Aujla', 'AP Dhillon', 'Shubh', 'Sidhu Moose Wala'];
+  }
+  if (/^(bollywood|hindi|indian)(\s*(hits|songs|music|pop))?$/i.test(lower)) {
+    return ['Arijit Singh', 'Pritam', 'Atif Aslam', 'Shreya Ghoshal', 'AR Rahman', 'KK'];
+  }
+
+  const cleaned = q
+    .replace(/\b(hits|hit|songs|song|tracks|track|music|playlist|mix|top|best|popular|famous|global)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return [cleaned.length >= 2 ? cleaned : q];
+}
+
+function normalizeClientTitleKey(title = '') {
+  return String(title)
+    .toLowerCase()
+    .replace(/[（\[]/g, '(')
+    .replace(/[）\]]/g, ')')
+    .replace(/\s*\((?!.*?\bremix\b).*?\)\s*/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clientArtistsOverlap(a = '', b = '') {
+  const clean = (s) =>
+    String(s)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(
+        (w) =>
+          w.length > 2 &&
+          !['the', 'and', 'feat', 'ft', 'with', 'music', 'official'].includes(w)
+      );
+  const wordsA = clean(a);
+  const wordsB = clean(b);
+  if (wordsA.length === 0 || wordsB.length === 0) return false;
+  return wordsA.some((w) => wordsB.includes(w));
+}
+
+function isFakeCoverOrInstrumentalClient(item, title, artist, album, hiResImg, rawQuery) {
+  const lang = String(item?.language || '').toLowerCase();
+  const qLower = String(rawQuery || '').toLowerCase();
+  if (lang === 'instrumental' && !qLower.includes('instrumental')) return true;
+  if (
+    hiResImg &&
+    hiResImg.toLowerCase().includes('-instrumental-') &&
+    !qLower.includes('instrumental')
+  ) {
+    return true;
+  }
+  const normTitle = String(title || '').replace(/[（]/g, '(').replace(/[）]/g, ')');
+  const combined = `${normTitle} ${artist} ${album} ${item?.label || ''}`.toLowerCase();
+  const badPhrases = [
+    'karaoke',
+    'kidz bop',
+    'originally performed',
+    'originally perfomed',
+    'made famous by',
+    'in the style of',
+    '8-bit',
+    'ringtone',
+    'tribute to',
+    'covers culture',
+    'pop covers',
+    'piano instrumental',
+    'lullaby version',
+    'salsa version',
+    'salsa versión',
+    'bachata version',
+    'ukulele bros',
+    'sound tower',
+    'sunset roses',
+    'caletta remixes',
+    'sell your music',
+    'tallions',
+    'hafizur rahman',
+    '7thcloud',
+  ];
+  for (const phrase of badPhrases) {
+    if (combined.includes(phrase)) return true;
+  }
+  if (
+    !qLower.includes('cover') &&
+    (/\bcover\b/i.test(artist) ||
+      /\bcover\b/i.test(album) ||
+      /\((?:[^)]*\bcover\b[^)]*)\)/i.test(normTitle) ||
+      /\[(?:[^\]]*\bcover\b[^\]]*)\]/i.test(normTitle))
+  ) {
+    return true;
+  }
+  const remixTags = ['nightcore', 'hardstyle', 'ambient version', 'slowed', 'sped up', 'lofi flip', 'cover.lofi'];
+  for (const tag of remixTags) {
+    if (combined.includes(tag) && !qLower.includes(tag)) return true;
+  }
+  return false;
+}
+
+async function fetchSingleItunesClient(term, limit = 15) {
+  try {
+    const res = await fetch(
+      `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=${limit}`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.results) ? data.results : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchItunesCatalogClient(rawQuery) {
+  const subQueries = resolveItunesSubQueries(rawQuery);
+  if (subQueries.length > 1) {
+    const buckets = await Promise.all(
+      subQueries.map((sq) => fetchSingleItunesClient(sq, 5))
+    );
+    const interleaved = [];
+    const seenTitleKeys = new Set();
+    const maxLen = Math.max(...buckets.map((b) => b.length), 0);
+    for (let row = 0; row < maxLen; row++) {
+      for (let col = 0; col < buckets.length; col++) {
+        const it = buckets[col][row];
+        if (!it || !it.previewUrl) continue;
+        if (
+          isFakeCoverOrInstrumentalClient(
+            null,
+            it.trackName,
+            it.artistName,
+            it.collectionName,
+            it.artworkUrl100,
+            rawQuery
+          )
+        ) {
+          continue;
+        }
+        const titleKey = normalizeClientTitleKey(it.trackName);
+        if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+        seenTitleKeys.add(titleKey);
+        interleaved.push(it);
+      }
+    }
+    return interleaved;
+  }
+
+  const primaryTerm = subQueries[0] || rawQuery || 'The Weeknd';
+  const rawList = await fetchSingleItunesClient(primaryTerm, 20);
+  const deduped = [];
+  const seenTitleKeys = new Set();
+
+  for (const it of rawList) {
+    if (!it || !it.previewUrl) continue;
+    if (
+      isFakeCoverOrInstrumentalClient(
+        null,
+        it.trackName,
+        it.artistName,
+        it.collectionName,
+        it.artworkUrl100,
+        rawQuery
+      )
+    ) {
+      continue;
+    }
+    const titleKey = normalizeClientTitleKey(it.trackName);
+    if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+    seenTitleKeys.add(titleKey);
+    deduped.push(it);
+  }
+
+  if (deduped.length > 0 && deduped.length < 6) {
+    const topArtistRaw = deduped[0].artistName || '';
+    const artistParts = topArtistRaw
+      .split(/[,&]|feat\.|ft\./i)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 2)
+      .slice(0, 2);
+
+    if (artistParts.length > 0) {
+      const extraBuckets = await Promise.all(
+        artistParts.map((ap) => fetchSingleItunesClient(ap, 8))
+      );
+      for (const bucket of extraBuckets) {
+        for (const it of bucket) {
+          if (!it || !it.previewUrl) continue;
+          if (
+            isFakeCoverOrInstrumentalClient(
+              null,
+              it.trackName,
+              it.artistName,
+              it.collectionName,
+              it.artworkUrl100,
+              rawQuery
+            )
+          ) {
+            continue;
+          }
+          const titleKey = normalizeClientTitleKey(it.trackName);
+          if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+          seenTitleKeys.add(titleKey);
+          deduped.push(it);
+        }
+      }
+    }
+  }
+
+  return deduped;
+}
+
+async function fetchNeteaseCatalogClient(query, rawQuery) {
+  try {
+    const res = await fetch(
+      `https://music-api.gdstudio.xyz/api.php?types=search&source=netease&name=${encodeURIComponent(query)}&count=12&pages=1`
+    );
+    if (!res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+
+    const tracks = [];
+    const seenTitleKeys = new Set();
+
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      const neteaseId = item?.url_id || item?.id;
+      if (!neteaseId) continue;
+
+      const title = decodeHtmlEntities(item.name || '').trim();
+      const artist = Array.isArray(item.artist)
+        ? item.artist.map((a) => decodeHtmlEntities(a)).filter(Boolean).join(', ')
+        : decodeHtmlEntities(String(item.artist || 'Featured Artist'));
+      const album = decodeHtmlEntities(item.album || '').trim();
+
+      if (
+        !title ||
+        isFakeCoverOrInstrumentalClient(null, title, artist, album, null, rawQuery)
+      ) {
+        continue;
+      }
+
+      const titleKey = normalizeClientTitleKey(title);
+      if (!titleKey || seenTitleKeys.has(titleKey)) continue;
+      seenTitleKeys.add(titleKey);
+
+      tracks.push({
+        id: `netease-${neteaseId}`,
+        neteaseId: String(neteaseId),
+        picId: item.pic_id ? String(item.pic_id) : null,
+        title,
+        artist,
+        album,
+        coverUrl: null,
+        thumbUrl: null,
+        streamUrl: `gdstudio:netease:${neteaseId}`,
+        youtubeId: null,
+        backupYoutubeIds: [],
+        durationSec: 215,
+        fullTrackDurationSec: 215,
+        sourceType: 'online',
+      });
+    }
+    return tracks;
+  } catch {
+    return [];
+  }
+}
+
+async function resolveNeteasePicClient(picId) {
+  if (!picId) return null;
+  try {
+    const res = await fetch(
+      `https://music-api.gdstudio.xyz/api.php?types=pic&source=netease&id=${encodeURIComponent(picId)}&size=500`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.url && typeof data.url === 'string' ? data.url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Direct client-side online music search fallback (used automatically on GitHub Pages where `/api/music-search` is static/unavailable).
+ */
 export async function searchOnlineSongsClientFallback(rawQuery) {
-  const query = (rawQuery || '').trim() || 'The Weeknd Daft Punk Dua Lipa';
+  const subQueries = resolveItunesSubQueries(rawQuery);
+  const query = subQueries[0] || rawQuery || 'The Weeknd';
+  const allAllowedArtistQuery = subQueries.join(' ');
 
   // 1. Try Next.js API route first (when running locally or on a Node server)
   try {
-    const apiRes = await fetch(`/api/music-search?q=${encodeURIComponent(query)}`);
+    const apiRes = await fetch(`/api/music-search?q=${encodeURIComponent(rawQuery || '')}`);
     if (apiRes.ok) {
       const contentType = apiRes.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const apiData = await apiRes.json();
-        if (apiData && apiData.ok && Array.isArray(apiData.results)) {
+        if (apiData && apiData.ok && Array.isArray(apiData.results) && apiData.results.length > 0) {
           return apiData;
         }
       }
@@ -266,16 +657,56 @@ export async function searchOnlineSongsClientFallback(rawQuery) {
     // Fall through to direct client-side CORS search (for GitHub Pages!)
   }
 
-  // 2. Direct Client-Side Search via JioSaavn API + iTunes Search API (both support CORS `Access-Control-Allow-Origin: *`)
+  // 2. Direct Client-Side Search via Apple iTunes Search API + NetEase Global 320kbps + JioSaavn API (all support CORS `Access-Control-Allow-Origin: *`)
   try {
-    const [saavnRes, itunesRes] = await Promise.allSettled([
-      fetch(`https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&limit=14`),
-      fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=12`),
+    const [itResults, neteaseTracks, saavnRes] = await Promise.all([
+      fetchItunesCatalogClient(rawQuery),
+      fetchNeteaseCatalogClient(query, rawQuery),
+      fetch(`https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(query)}&limit=16`).catch(
+        () => null
+      ),
     ]);
 
-    const tracks = [];
-    if (saavnRes.status === 'fulfilled' && saavnRes.value.ok) {
-      const json = await saavnRes.value.json();
+    const itunesTracks = [];
+    for (let i = 0; i < itResults.length; i++) {
+      const it = itResults[i];
+      if (!it.previewUrl) continue;
+      const hiRes = (it.artworkUrl100 || '').replace('100x100bb', '600x600bb');
+      const fullDurSec = Math.max(90, Math.round((it.trackTimeMillis || 210000) / 1000));
+      const trackTitle = it.trackName || 'Track';
+      const trackArtist = it.artistName || 'Artist';
+
+      const matchedNetease = neteaseTracks.find(
+        (nt) =>
+          (normalizeClientTitleKey(nt.title) === normalizeClientTitleKey(trackTitle) ||
+            nt.title.toLowerCase().includes(trackTitle.toLowerCase()) ||
+            trackTitle.toLowerCase().includes(nt.title.toLowerCase())) &&
+          clientArtistsOverlap(nt.artist, trackArtist)
+      );
+
+      const streamSpec = matchedNetease
+        ? `gdstudio:netease:${matchedNetease.neteaseId}||${it.previewUrl}`
+        : `gdstudio:query:${trackTitle} ${trackArtist}||${it.previewUrl}`;
+
+      itunesTracks.push({
+        id: `itunes-${it.trackId || i}`,
+        title: trackTitle,
+        artist: trackArtist,
+        album: it.collectionName || '',
+        coverUrl: hiRes || it.artworkUrl100,
+        thumbUrl: it.artworkUrl100,
+        streamUrl: streamSpec,
+        youtubeId: null,
+        backupYoutubeIds: [],
+        durationSec: fullDurSec,
+        fullTrackDurationSec: fullDurSec,
+        sourceType: 'online',
+      });
+    }
+
+    const saavnTracks = [];
+    if (saavnRes && saavnRes.ok) {
+      const json = await saavnRes.json();
       const raw = Array.isArray(json?.data?.results) ? json.data.results : [];
       for (let i = 0; i < raw.length; i++) {
         const item = raw[i];
@@ -286,6 +717,7 @@ export async function searchOnlineSongsClientFallback(rawQuery) {
         const artistList =
           item.artists?.primary?.map((a) => decodeHtmlEntities(a.name)).filter(Boolean) || [];
         const artist = artistList.join(', ') || 'Featured Artist';
+        const album = decodeHtmlEntities(item.album?.name || '');
 
         const downloads = Array.isArray(item.downloadUrl) ? item.downloadUrl : [];
         const bestStream =
@@ -303,11 +735,23 @@ export async function searchOnlineSongsClientFallback(rawQuery) {
         const thumbImg =
           images.find((im) => im.quality === '150x150')?.url || hiResImg;
 
-        tracks.push({
+        if (isFakeCoverOrInstrumentalClient(item, title, artist, album, hiResImg, rawQuery)) {
+          continue;
+        }
+
+        if (
+          itunesTracks.length > 0 &&
+          !itunesTracks.some((it) => clientArtistsOverlap(artist, it.artist)) &&
+          !clientArtistsOverlap(artist, allAllowedArtistQuery)
+        ) {
+          continue;
+        }
+
+        saavnTracks.push({
           id: `saavn-${item.id}`,
           title,
           artist,
-          album: decodeHtmlEntities(item.album?.name || ''),
+          album,
           coverUrl: hiResImg,
           thumbUrl: thumbImg,
           streamUrl: bestStream,
@@ -316,39 +760,119 @@ export async function searchOnlineSongsClientFallback(rawQuery) {
           durationSec,
           fullTrackDurationSec: durationSec,
           sourceType: 'online',
-          accentColor: ACCENT_PALETTE[tracks.length % ACCENT_PALETTE.length],
         });
       }
     }
 
-    if (tracks.length === 0 && itunesRes.status === 'fulfilled' && itunesRes.value.ok) {
-      const itData = await itunesRes.value.json();
-      const itResults = Array.isArray(itData?.results) ? itData.results : [];
-      for (let i = 0; i < itResults.length; i++) {
-        const it = itResults[i];
-        if (!it.previewUrl) continue;
-        const hiRes = (it.artworkUrl100 || '').replace('100x100bb', '600x600bb');
-        tracks.push({
-          id: `itunes-${it.trackId || i}`,
-          title: it.trackName || 'Track',
-          artist: it.artistName || 'Artist',
-          album: it.collectionName || '',
-          coverUrl: hiRes || it.artworkUrl100,
-          thumbUrl: it.artworkUrl100,
-          streamUrl: it.previewUrl,
-          youtubeId: null,
-          backupYoutubeIds: [],
-          durationSec: Math.round((it.trackTimeMillis || 180000) / 1000),
-          sourceType: 'online',
-          accentColor: ACCENT_PALETTE[tracks.length % ACCENT_PALETTE.length],
-        });
+    // Upgrade iTunes tracks to full-length 320kbps Saavn stream whenever BOTH title & artist match
+    for (const it of itunesTracks) {
+      const matchedSaavn = saavnTracks.find(
+        (st) =>
+          (st.title.toLowerCase().includes(it.title.toLowerCase()) ||
+            it.title.toLowerCase().includes(st.title.toLowerCase())) &&
+          clientArtistsOverlap(st.artist, it.artist)
+      );
+      if (matchedSaavn) {
+        it.streamUrl = matchedSaavn.streamUrl;
+        it.durationSec = matchedSaavn.durationSec;
+        it.id = matchedSaavn.id;
       }
     }
+
+    // Enrich NetEase tracks missing from US iTunes (e.g. Blinding Lights, House of Balloons, FE!N)
+    const unmatchedNetease = [];
+    for (const nt of neteaseTracks) {
+      const alreadyInItunes = itunesTracks.some(
+        (it) =>
+          normalizeClientTitleKey(it.title) === normalizeClientTitleKey(nt.title) &&
+          clientArtistsOverlap(it.artist, nt.artist)
+      );
+      if (alreadyInItunes) continue;
+
+      const sameArtistItunes = itResults.find(
+        (it) =>
+          it.artworkUrl100 &&
+          clientArtistsOverlap(nt.artist, it.artistName || '') &&
+          (!nt.album ||
+            (it.collectionName || '').toLowerCase().includes(nt.album.toLowerCase()) ||
+            nt.album.toLowerCase().includes((it.collectionName || '').toLowerCase()))
+      );
+      if (sameArtistItunes?.artworkUrl100) {
+        nt.coverUrl = sameArtistItunes.artworkUrl100.replace('100x100bb', '600x600bb');
+        nt.thumbUrl = sameArtistItunes.artworkUrl100;
+      }
+      if (sameArtistItunes?.previewUrl) {
+        nt.streamUrl = `gdstudio:netease:${nt.neteaseId}||${sameArtistItunes.previewUrl}`;
+      }
+      unmatchedNetease.push(nt);
+    }
+
+    const needsPicResolve = unmatchedNetease.filter((nt) => !nt.coverUrl && nt.picId).slice(0, 4);
+    if (needsPicResolve.length > 0) {
+      await Promise.all(
+        needsPicResolve.map(async (nt) => {
+          const picUrl = await resolveNeteasePicClient(nt.picId);
+          if (picUrl) {
+            nt.coverUrl = picUrl;
+            nt.thumbUrl = picUrl;
+          }
+        })
+      );
+    }
+
+    // Combine official iTunes + NetEase + verified Saavn tracks without duplicates
+    const combined = [];
+    const seenKeys = new Set();
+    const titleCounts = new Map();
+    for (const item of [...itunesTracks, ...unmatchedNetease, ...saavnTracks]) {
+      const titleKey = normalizeClientTitleKey(item.title);
+      const artistKey = item.artist
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 12);
+      const pairKey = `${titleKey}|${artistKey}`;
+      const curCount = titleCounts.get(titleKey) || 0;
+      if (!seenKeys.has(pairKey) && curCount < 2) {
+        seenKeys.add(pairKey);
+        titleCounts.set(titleKey, curCount + 1);
+        combined.push(item);
+      }
+    }
+
+    const isSpecificQuery = subQueries.length === 1 && Boolean(rawQuery);
+    const qNorm = isSpecificQuery ? normalizeClientTitleKey(query) : '';
+    combined.sort((a, b) => {
+      if (qNorm.length >= 2) {
+        const aExactTitle = normalizeClientTitleKey(a.title).includes(qNorm);
+        const bExactTitle = normalizeClientTitleKey(b.title).includes(qNorm);
+        if (aExactTitle !== bExactTitle) return aExactTitle ? -1 : 1;
+
+        if (aExactTitle && bExactTitle && !qNorm.includes('remix')) {
+          const aIsRemix = /\bremix\b/i.test(a.title);
+          const bIsRemix = /\bremix\b/i.test(b.title);
+          if (aIsRemix !== bIsRemix) return aIsRemix ? 1 : -1;
+        }
+      }
+
+      const aMatch =
+        clientArtistsOverlap(a.artist, allAllowedArtistQuery) ||
+        a.title.toLowerCase().includes((rawQuery || '').toLowerCase().trim());
+      const bMatch =
+        clientArtistsOverlap(b.artist, allAllowedArtistQuery) ||
+        b.title.toLowerCase().includes((rawQuery || '').toLowerCase().trim());
+      if (aMatch !== bMatch) return aMatch ? -1 : 1;
+      return 0;
+    });
+
+    const finalResults = combined.slice(0, 24).map((item, idx) => ({
+      ...item,
+      accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
+    }));
 
     return {
       ok: true,
-      query,
-      results: tracks.slice(0, 16),
+      query: rawQuery || query,
+      results: finalResults,
     };
   } catch (err) {
     return {

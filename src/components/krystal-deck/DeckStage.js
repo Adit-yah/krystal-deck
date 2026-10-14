@@ -241,13 +241,13 @@ export default function DeckStage() {
           subtitle: c.subtitle,
           shellAccent: c.shellAccent || '#253545',
           synthPreset: c.synthPreset,
-          sourceType: c.youtubeId ? 'youtube' : 'synth',
+          sourceType: c.streamUrl ? 'online' : c.youtubeId ? 'youtube' : 'synth',
           thumbUrl: asset.thumbUrl,
           coverUrl: null,
           coverDataUrl: null,
           texture: asset.texture,
           file: null,
-          streamUrl: null,
+          streamUrl: c.streamUrl || null,
           youtubeId: c.youtubeId || null,
           backupYoutubeIds: c.backupYoutubeIds || [],
           durationSec: c.durationSec || 210,
@@ -287,19 +287,23 @@ export default function DeckStage() {
               shellAccent: defaultSpec.shellAccent || '#253545',
               synthPreset: defaultSpec.synthPreset,
               sourceType:
-                saved.sourceType || (defaultSpec.youtubeId ? 'youtube' : 'synth'),
+                defaultSpec.streamUrl
+                  ? 'online'
+                  : saved.sourceType || (defaultSpec.youtubeId ? 'youtube' : 'synth'),
               thumbUrl: asset.thumbUrl,
               coverUrl: null,
               coverDataUrl: null,
               texture: asset.texture,
               file: null,
-              streamUrl: saved.streamUrl || null,
+              streamUrl: defaultSpec.streamUrl || saved.streamUrl || null,
               youtubeId: saved.youtubeId || defaultSpec.youtubeId || null,
               backupYoutubeIds:
                 Array.isArray(saved.backupYoutubeIds) && saved.backupYoutubeIds.length > 0
                   ? saved.backupYoutubeIds
                   : defaultSpec.backupYoutubeIds || [],
-              durationSec: saved.durationSec || defaultSpec.durationSec || 210,
+              durationSec:
+                defaultSpec.durationSec ||
+                (saved.durationSec && saved.durationSec > 45 ? saved.durationSec : 210),
               spotifyId: saved.spotifyId || null,
               spotifyType: saved.spotifyType || 'track',
               isDefault: true,
@@ -316,18 +320,31 @@ export default function DeckStage() {
           texture.anisotropy = maxAniso;
 
           const entryId = saved.id || `cas-restored-${idx}-${Date.now()}`;
+          const restoredTitle = saved.title || 'Custom Track';
+          const restoredArtist = saved.artist || 'Studio Master';
+          let restoredStreamUrl = saved.streamUrl || null;
+          if (
+            restoredStreamUrl &&
+            !restoredStreamUrl.startsWith('gdstudio:') &&
+            restoredStreamUrl.includes('itunes.apple.com')
+          ) {
+            restoredStreamUrl = `gdstudio:query:${restoredTitle} ${restoredArtist}||${restoredStreamUrl}`;
+          } else if (!restoredStreamUrl && restoredTitle && saved.sourceType !== 'file') {
+            restoredStreamUrl = `gdstudio:query:${restoredTitle} ${restoredArtist}||`;
+          }
+
           const entry = {
             id: entryId,
             externalId: saved.externalId || saved.onlineTrackId || null,
             onlineTrackId: saved.onlineTrackId || saved.externalId || null,
-            title: saved.title || 'Custom Track',
-            artist: saved.artist || 'Studio Master',
+            title: restoredTitle,
+            artist: restoredArtist,
             subtitle: saved.subtitle || '',
             shellAccent: saved.shellAccent || '#ff3b1f',
             synthPreset: saved.synthPreset || 'custom-file',
-            sourceType:
-              saved.sourceType ||
-              (saved.streamUrl ? 'online' : saved.youtubeId ? 'youtube' : 'synth'),
+            sourceType: restoredStreamUrl
+              ? 'online'
+              : saved.sourceType || (saved.youtubeId ? 'youtube' : 'synth'),
             thumbUrl: saved.coverUrl || dataUrl,
             coverUrl: saved.coverUrl || null,
             coverDataUrl:
@@ -337,10 +354,11 @@ export default function DeckStage() {
             cassetteUrl: dataUrl,
             texture,
             file: null,
-            streamUrl: saved.streamUrl || null,
+            streamUrl: restoredStreamUrl,
             youtubeId: saved.youtubeId || null,
             backupYoutubeIds: Array.isArray(saved.backupYoutubeIds) ? saved.backupYoutubeIds : [],
-            durationSec: saved.durationSec || 210,
+            durationSec:
+              saved.durationSec && saved.durationSec > 45 ? saved.durationSec : 210,
             spotifyId: saved.spotifyId || null,
             spotifyType: saved.spotifyType || 'track',
             isDefault: false,
@@ -497,9 +515,33 @@ export default function DeckStage() {
       sceneScale: 0.82,
     };
 
-    // Hydrate cover art images onto restored custom cassettes asynchronously
+    // Hydrate cover art images & missing ad-free streamUrls onto restored custom cassettes asynchronously
     if (asyncCoverHydrations.length > 0) {
-      asyncCoverHydrations.forEach(async ({ entryId, coverUrl }) => {
+      asyncCoverHydrations.forEach(async ({ entryId, coverUrl, hydrateStreamOnly, title, artist }) => {
+        if (hydrateStreamOnly) {
+          try {
+            const q = `${title || ''} ${artist || ''}`.trim();
+            if (!q) return;
+            const itRes = await fetch(
+              `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=music&entity=song&limit=5`
+            );
+            if (!itRes.ok) return;
+            const itData = await itRes.json();
+            const hit = Array.isArray(itData?.results)
+              ? itData.results.find((r) => r && r.previewUrl)
+              : null;
+            if (!hit?.previewUrl) return;
+            const target = cassetteListRef.current.find((c) => c.id === entryId);
+            if (!target || target.streamUrl) return;
+            target.streamUrl = hit.previewUrl;
+            target.sourceType = 'online';
+            saveCollectionToStorage(cassetteListRef.current);
+            setCassetteList([...cassetteListRef.current]);
+          } catch {
+            // Optional hydration
+          }
+          return;
+        }
         const { img, resolvedUrl, compressedDataUrl } = await loadCoverImageWithFallback(coverUrl);
         if (!img) return;
         const target = cassetteListRef.current.find((c) => c.id === entryId);
@@ -587,14 +629,11 @@ export default function DeckStage() {
         getShellColorForAccent(item.shellAccent)
       );
 
-      if (item.streamUrl && item.sourceType !== 'youtube') {
+      if (item.streamUrl) {
         audio.loadRemoteAudioStream(item.streamUrl);
         if (item.sourceType !== 'spotify') setShowSpotifyEmbed(false);
       } else if (item.youtubeId) {
         audio.loadYouTubeVideo(item.youtubeId, item.streamUrl, item.backupYoutubeIds);
-        if (item.sourceType !== 'spotify') setShowSpotifyEmbed(false);
-      } else if (item.streamUrl) {
-        audio.loadRemoteAudioStream(item.streamUrl);
         if (item.sourceType !== 'spotify') setShowSpotifyEmbed(false);
       } else if (item.sourceType === 'file' && item.file) {
         audio.loadCustomAudioFile(item.file);
