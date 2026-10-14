@@ -1,0 +1,17 @@
+{
+  "name": "krystal-deck",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3088",
+    "build": "next build",
+    "build:gh": "node scripts/build-gh-pages.mjs",
+    "start": "next start --port 3088"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.172.0"
+  }
+}

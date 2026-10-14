@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#23252f" />
+      <stop offset="100%" stop-color="#111217" />
+    </linearGradient>
+    <linearGradient id="label" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff3b1f" />
+      <stop offset="100%" stop-color="#e11d48" />
+    </linearGradient>
+  </defs>
+  <!-- Outer rounded square badge -->
+  <rect x="2" y="8" width="60" height="48" rx="11" fill="url(#shell)" stroke="#3f4354" stroke-width="2" />
+  <!-- Upper cassette label band -->
+  <rect x="7" y="13" width="50" height="27" rx="5" fill="#f6f1e7" />
+  <rect x="7" y="13" width="50" height="8" rx="4" fill="url(#label)" />
+  <!-- Center dark tape window & twin reels -->
+  <rect x="11" y="22" width="42" height="16" rx="8" fill="#15171e" stroke="#d4cbb8" stroke-width="1.5" />
+  <!-- Left Reel -->
+  <circle cx="21" cy="30" r="5.2" fill="#f8fafc" />
+  <circle cx="21" cy="30" r="2.2" fill="#15171e" />
+  <!-- Right Reel -->
+  <circle cx="43" cy="30" r="5.2" fill="#f8fafc" />
+  <circle cx="43" cy="30" r="2.2" fill="#15171e" />
+  <!-- Center tape window glass bridge -->
+  <rect x="28" y="26.5" width="8" height="7" rx="1.5" fill="#262936" stroke="#475569" stroke-width="1" />
+  <!-- Bottom trapezoid head shield -->
+  <path d="M16 54 L20 44 L44 44 L48 54 Z" fill="#1d1f28" stroke="#383c4c" stroke-width="1.5" />
+  <circle cx="25" cy="50" r="1.8" fill="#94a3b8" />
+  <circle cx="39" cy="50" r="1.8" fill="#94a3b8" />
+</svg>
