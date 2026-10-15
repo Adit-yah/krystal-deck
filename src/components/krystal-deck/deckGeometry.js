@@ -220,7 +220,7 @@ export function createStudioEnvironment(renderer) {
   floorBox.lookAt(0, 0, 0);
   envScene.add(floorBox);
 
-  const envRT = pmrem.fromScene(envScene, 0.045);
+  const envRT = pmrem.fromScene(envScene, 0.035);
   pmrem.dispose();
   return envRT.texture;
 }
@@ -1163,9 +1163,10 @@ function createTopSpeakerGrilleTexture() {
 /**
  * Builds the complete KRYSTAL Walkin Shiny Edition 3D Cassette Player & Removable Cassette Scene Graph
  */
-export function buildWalkmanPlayerScene(renderer, initialArtTexture) {
+export function buildWalkmanPlayerScene(renderer, initialArtTexture, initialColorId) {
   const envMap = createStudioEnvironment(renderer);
-  const initialVariant = PLAYER_COLOR_VARIANTS[0];
+  const initialVariant =
+    PLAYER_COLOR_VARIANTS.find((v) => v.id === initialColorId) || PLAYER_COLOR_VARIANTS[0];
   const doorFasciaTex = createDoorFasciaTexture(initialVariant);
   const upperPillarTex = createUpperPillarPlateTexture(initialVariant);
   const lowerPillarTex = createLowerPillarLegendTexture(initialVariant);

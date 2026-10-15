@@ -228,9 +228,34 @@ export class KrystalAudioEngine {
       this.streamAudioEl.loop = false;
       this.streamAudioEl.preload = 'auto';
       this.streamAudioEl.referrerPolicy = 'no-referrer';
+      this.streamAudioEl.playsInline = true;
+      this.streamAudioEl.setAttribute('playsinline', '');
+      this.streamAudioEl.setAttribute('webkit-playsinline', '');
       this.streamAudioEl.volume = this.volume;
+      const clearFetchingWhenReady = () => {
+        if (
+          this._rawStreamUrl &&
+          !this._rawStreamUrl.startsWith('data:') &&
+          isFinite(this.streamAudioEl.duration) &&
+          this.streamAudioEl.duration > 5
+        ) {
+          this.isFetchingStream = false;
+        }
+      };
+      this.streamAudioEl.addEventListener('loadedmetadata', clearFetchingWhenReady);
+      this.streamAudioEl.addEventListener('durationchange', clearFetchingWhenReady);
+      this.streamAudioEl.addEventListener('canplay', clearFetchingWhenReady);
       this.streamAudioEl.addEventListener('ended', () => {
-        if (this.preset === 'custom-file' && this.customSourceType === 'stream') {
+        if (
+          this.preset === 'custom-file' &&
+          this.customSourceType === 'stream' &&
+          !this.isFetchingStream &&
+          !this._preloadingStream &&
+          this._rawStreamUrl &&
+          !this._rawStreamUrl.startsWith('data:') &&
+          isFinite(this.streamAudioEl.duration) &&
+          this.streamAudioEl.duration > 5
+        ) {
           this._handleTrackEnded(this.streamAudioEl);
         }
       });
@@ -274,10 +299,19 @@ export class KrystalAudioEngine {
             this.streamAudioEl.volume = this.getEffectiveVolume();
             this.streamAudioEl.play().catch(() => {});
           }
+        } else {
+          this.isFetchingStream = false;
         }
       });
     }
     return this.streamAudioEl;
+  }
+
+  prewarmStreamUrl(streamSpec) {
+    if (!streamSpec || typeof streamSpec !== 'string') return Promise.resolve(null);
+    const cached = this._getCachedDirectUrl(streamSpec);
+    if (cached) return Promise.resolve(cached);
+    return this._resolvePlayableStreamUrl(streamSpec).catch(() => null);
   }
 
   _getCachedDirectUrl(streamSpec) {
@@ -364,16 +398,27 @@ export class KrystalAudioEngine {
   }
 
   _applyResolvedStreamSpec(streamSpec, isTabHidden = false) {
+    this.isFetchingStream = true;
     this._resolvePlayableStreamUrl(streamSpec).then((resolvedUrl) => {
-      if (!resolvedUrl || this._rawStreamSpec !== streamSpec) return;
+      if (this._rawStreamSpec !== streamSpec) return;
+      if (!resolvedUrl) {
+        this.isFetchingStream = false;
+        return;
+      }
       const el = this._ensureStreamAudioEl();
-      if (!el) return;
+      if (!el) {
+        this.isFetchingStream = false;
+        return;
+      }
       if (this._rawStreamUrl !== resolvedUrl) {
         this._rawStreamUrl = resolvedUrl;
         this._usingStreamProxy = false;
         this._usingFallbackSpecUrl = false;
+        this.isFetchingStream = true;
         el.src = resolvedUrl;
         el.load();
+      } else if (isFinite(el.duration) && el.duration > 5) {
+        this.isFetchingStream = false;
       }
       if (this.customSourceType === 'stream' && this.preset === 'custom-file') {
         this._syncCustomTransport();
@@ -402,7 +447,13 @@ export class KrystalAudioEngine {
         (this._rawStreamSpec === preloadStreamUrl || this._rawStreamUrl === preloadStreamUrl) &&
         this.customSourceType === 'stream'
       ) {
-        if (el && el.paused && this.isPlaying && this._rawStreamUrl) {
+        if (
+          el &&
+          el.paused &&
+          this.isPlaying &&
+          this._rawStreamUrl &&
+          !this._rawStreamUrl.startsWith('data:')
+        ) {
           el.muted = Boolean(this.muted);
           el.volume = this.getEffectiveVolume();
           el.play().catch(() => {});
@@ -423,6 +474,7 @@ export class KrystalAudioEngine {
             this._rawStreamUrl = cachedDirectUrl;
             this._usingStreamProxy = false;
             this._usingFallbackSpecUrl = false;
+            this.isFetchingStream = true;
             el.src = cachedDirectUrl;
           }
           el.muted = Boolean(this.muted);
@@ -430,6 +482,7 @@ export class KrystalAudioEngine {
           el.play().catch(() => {});
         }
       } else {
+        this.isFetchingStream = true;
         // Unlock the HTMLAudioElement synchronously inside the click gesture while the 320kbps MP3 URL resolves
         if (el && !this._streamGestureUnlocked) {
           this._streamGestureUnlocked = true;
@@ -487,10 +540,16 @@ export class KrystalAudioEngine {
         return { cur: 0, dur: 0 };
       }
     }
+    if (
+      this.customSourceType === 'stream' &&
+      (!this._rawStreamUrl || this._rawStreamUrl.startsWith('data:'))
+    ) {
+      return { cur: 0, dur: 0 };
+    }
     const activeEl = this.customSourceType === 'stream' ? this.streamAudioEl : this.audioEl;
     if (!activeEl) return { cur: 0, dur: 0 };
-    const dur = isFinite(activeEl.duration) ? activeEl.duration : 0;
-    const cur = activeEl.currentTime || 0;
+    const dur = isFinite(activeEl.duration) && activeEl.duration > 5 ? activeEl.duration : 0;
+    const cur = dur > 0 ? activeEl.currentTime || 0 : 0;
     return { cur, dur };
   }
 
@@ -766,7 +825,9 @@ export class KrystalAudioEngine {
    * without CORS WebAudio restrictions so any external CDN stream plays reliably.
    */
   loadRemoteAudioStream(streamUrl) {
-    this.ensureContext();
+    if (this.isPlaying) {
+      this.ensureContext();
+    }
     this._preloadingYouTube = false;
     this._endHandledForTrack = false;
     if (this.audioEl) this.audioEl.pause();
@@ -788,8 +849,11 @@ export class KrystalAudioEngine {
         this._usingStreamProxy = false;
         this._usingFallbackSpecUrl = false;
         this._scrubCursor = null;
+        this.isFetchingStream = true;
         el.src = cachedDirectUrl;
         el.load();
+      } else if (isFinite(el.duration) && el.duration > 5) {
+        this.isFetchingStream = false;
       }
       this.customSourceType = 'stream';
       this.hasCustomSong = true;
@@ -797,6 +861,7 @@ export class KrystalAudioEngine {
       this._syncCustomTransport();
     } else {
       this._scrubCursor = null;
+      this.isFetchingStream = true;
       this.customSourceType = 'stream';
       this.hasCustomSong = true;
       this.preset = 'custom-file';
@@ -1004,16 +1069,42 @@ export class KrystalAudioEngine {
     }
   }
 
+  seekToSeconds(targetSec) {
+    const { dur } = this._getRawCurrentTimeAndDuration();
+    const totalDur = dur > 0 ? dur : this.synthDuration || 28;
+    const clampedSec = Math.max(0, Math.min(totalDur, Number(targetSec) || 0));
+    this.seekCustomAudio(totalDur > 0 ? clampedSec / totalDur : 0);
+  }
+
+  seekByOffset(deltaSec) {
+    const { cur, dur } = this._getRawCurrentTimeAndDuration();
+    const totalDur = dur > 0 ? dur : this.synthDuration || 28;
+    const nextSec = Math.max(0, Math.min(totalDur, (cur || 0) + (Number(deltaSec) || 0)));
+    this.seekCustomAudio(totalDur > 0 ? nextSec / totalDur : 0);
+  }
+
   getCustomAudioProgress() {
     const { cur: rawCur, dur } = this._getRawCurrentTimeAndDuration();
     const cur =
       (this.mode === 'FF' || this.mode === 'REW') && this._scrubCursor !== null
         ? Math.max(0, dur > 0 ? Math.min(dur, this._scrubCursor) : this._scrubCursor)
         : rawCur;
+    const isFetching = Boolean(
+      this.isFetchingStream ||
+        (this.preset === 'custom-file' &&
+          this.customSourceType === 'stream' &&
+          (!this._rawStreamUrl ||
+            this._rawStreamUrl.startsWith('data:') ||
+            dur <= 0)) ||
+        (this.preset === 'custom-file' &&
+          this.customSourceType === 'youtube' &&
+          dur <= 0)
+    );
     return {
       currentTime: cur,
       duration: dur,
       progress: dur > 0 ? Math.max(0, Math.min(1, cur / dur)) : 0,
+      isFetching,
     };
   }
 
@@ -1062,12 +1153,20 @@ export class KrystalAudioEngine {
           : this.customSourceType === 'stream'
           ? this.streamAudioEl
           : null;
+      const isStreamReady =
+        activeEl !== this.streamAudioEl ||
+        (!this.isFetchingStream &&
+          !this._preloadingStream &&
+          this._rawStreamUrl &&
+          !this._rawStreamUrl.startsWith('data:') &&
+          isFinite(activeEl?.duration) &&
+          activeEl.duration > 5);
       if (activeEl && this.isPlaying) {
         const rate = this.mode === 'PLAY' ? 1.0 : this.mode === 'FF' ? 1.65 : 1.0;
         if (Math.abs(activeEl.playbackRate - rate) > 0.005) {
           activeEl.playbackRate = rate;
         }
-        if (activeEl.ended && !this._endHandledForTrack) {
+        if (isStreamReady && activeEl.ended && !this._endHandledForTrack) {
           this._handleTrackEnded(activeEl);
           return;
         }
@@ -1084,7 +1183,7 @@ export class KrystalAudioEngine {
           } catch {
             // Ignore
           }
-        } else if (activeEl) {
+        } else if (activeEl && isStreamReady) {
           const { cur, dur } = this._getRawCurrentTimeAndDuration();
           if (dur > 5 && cur >= dur - 0.2) {
             this._handleTrackEnded(activeEl);

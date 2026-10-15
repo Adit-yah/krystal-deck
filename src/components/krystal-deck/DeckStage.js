@@ -58,6 +58,630 @@ function formatTime(sec) {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+function normalizeRecTitleKey(title = '') {
+  return String(title)
+    .toLowerCase()
+    .replace(/[（\[]/g, '(')
+    .replace(/[）\]]/g, ')')
+    .replace(/\s*\((?!.*?\bremix\b).*?\)\s*/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const GENERIC_REC_ARTISTS = new Set([
+  'krystal audio lab',
+  'studio master',
+  'featured artist',
+  'unknown artist',
+  'custom track',
+  'online track',
+  'streamed track',
+  'youtube music',
+  'spotify artist',
+]);
+
+/**
+ * Curated Genre & Similar-Artist Radio Graph (Spotify / Apple Music / YouTube Music style)
+ * Maps artists and search keywords to peer artists in the exact same vibe, genre, and language.
+ */
+const SIMILAR_ARTIST_CLUSTERS = [
+  {
+    id: 'rnb-dark-pop',
+    keywords: [
+      'the weeknd',
+      'weeknd',
+      'sza',
+      'frank ocean',
+      'brent faiyaz',
+      'bryson tiller',
+      'partynextdoor',
+      'daniel caesar',
+      'khalid',
+      'tory lanez',
+      'kali uchis',
+      'steve lacy',
+      'giveon',
+      'summer walker',
+      'jhene aiko',
+      'kehlani',
+      'chris brown',
+      'usher',
+      'rihanna',
+      'miguel',
+      'childish gambino',
+      'joji',
+      'chase atlantic',
+      'r&b',
+      'rnb',
+    ],
+    peers: [
+      'The Weeknd',
+      'SZA',
+      'Frank Ocean',
+      'Drake',
+      'Post Malone',
+      'Bruno Mars',
+      'Ariana Grande',
+      'Daniel Caesar',
+      'Rihanna',
+      'Travis Scott',
+      'Joji',
+      'Khalid',
+      'Chris Brown',
+    ],
+  },
+  {
+    id: 'global-pop',
+    keywords: [
+      'bruno mars',
+      'lady gaga',
+      'dua lipa',
+      'billie eilish',
+      'sabrina carpenter',
+      'taylor swift',
+      'harry styles',
+      'olivia rodrigo',
+      'charlie puth',
+      'justin bieber',
+      'ariana grande',
+      'post malone',
+      'shawn mendes',
+      'camila cabello',
+      'ed sheeran',
+      'adele',
+      'maroon 5',
+      'katy perry',
+      'miley cyrus',
+      'selena gomez',
+      'doja cat',
+      'tate mcrae',
+      'chappell roan',
+      'benson boone',
+      'halsey',
+      'the chainsmokers',
+      'one direction',
+      'zayn',
+      'troye sivan',
+      'lauv',
+      'conan gray',
+      'global pop',
+      'pop hits',
+    ],
+    peers: [
+      'Bruno Mars',
+      'Dua Lipa',
+      'Billie Eilish',
+      'The Weeknd',
+      'Sabrina Carpenter',
+      'Taylor Swift',
+      'Harry Styles',
+      'Ariana Grande',
+      'Post Malone',
+      'Olivia Rodrigo',
+      'Charlie Puth',
+      'Justin Bieber',
+      'Rihanna',
+      'Lady Gaga',
+    ],
+  },
+  {
+    id: 'hiphop-trap',
+    keywords: [
+      'travis scott',
+      'playboi carti',
+      'kendrick lamar',
+      'drake',
+      'future',
+      'metro boomin',
+      '21 savage',
+      'don toliver',
+      'kanye west',
+      'eminem',
+      'j. cole',
+      'j cole',
+      'lil baby',
+      'gunna',
+      'central cee',
+      'lil uzi vert',
+      'a$ap rocky',
+      'asap rocky',
+      'pop smoke',
+      'juice wrld',
+      'xxxtentacion',
+      'jack harlow',
+      'nicki minaj',
+      'cardi b',
+      'offset',
+      'quavo',
+      'migos',
+      'young thug',
+      'tyler, the creator',
+      'baby keem',
+      'yeat',
+      'fe!n',
+      'hip hop',
+      'trap',
+      'rap',
+    ],
+    peers: [
+      'Travis Scott',
+      'Metro Boomin',
+      'Drake',
+      'Kendrick Lamar',
+      'Future',
+      'Don Toliver',
+      '21 Savage',
+      'Playboi Carti',
+      'Kanye West',
+      'Post Malone',
+      'The Weeknd',
+      'Juice WRLD',
+      'Lil Uzi Vert',
+    ],
+  },
+  {
+    id: 'indie-alt-dreampop',
+    keywords: [
+      'the neighbourhood',
+      'arctic monkeys',
+      'tame impala',
+      'lana del rey',
+      'cigarettes after sex',
+      'glass animals',
+      'hozier',
+      'mac demarco',
+      'clairo',
+      'beabadoobee',
+      'girl in red',
+      'd4vd',
+      'mitski',
+      'vance joy',
+      'lorde',
+      'twenty one pilots',
+      'cage the elephant',
+      'gorillaz',
+      'the 1975',
+      'wallows',
+      'dayglow',
+      'tv girl',
+      'vacations',
+      'men i trust',
+      'beach house',
+      'indie',
+      'dream pop',
+      'lofi',
+    ],
+    peers: [
+      'Arctic Monkeys',
+      'The Neighbourhood',
+      'Tame Impala',
+      'Lana Del Rey',
+      'Cigarettes After Sex',
+      'Glass Animals',
+      'Hozier',
+      'Billie Eilish',
+      'Joji',
+      'The 1975',
+      'TV Girl',
+      'Twenty One Pilots',
+    ],
+  },
+  {
+    id: 'electronic-synth-edm',
+    keywords: [
+      'daft punk',
+      'calvin harris',
+      'avicii',
+      'fred again',
+      'kavinsky',
+      'zedd',
+      'david guetta',
+      'marshmello',
+      'tiesto',
+      'tiësto',
+      'kygo',
+      'disclosure',
+      'justice',
+      'alan walker',
+      'martin garrix',
+      'swedish house mafia',
+      'skrillex',
+      'peggy gou',
+      'rufus du sol',
+      'm83',
+      'empire of the sun',
+      'deadmau5',
+      'flume',
+      'odesza',
+      'gesaffelstein',
+      'synthwave',
+      'edm',
+      'electronic',
+    ],
+    peers: [
+      'Daft Punk',
+      'Calvin Harris',
+      'Avicii',
+      'The Weeknd',
+      'Kygo',
+      'Zedd',
+      'David Guetta',
+      'Fred again',
+      'Empire of the Sun',
+      'M83',
+      'Disclosure',
+      'Kavinsky',
+    ],
+  },
+  {
+    id: 'rock-alt-anthems',
+    keywords: [
+      'linkin park',
+      'queen',
+      'nirvana',
+      'coldplay',
+      'imagine dragons',
+      'onerepublic',
+      'green day',
+      'red hot chili peppers',
+      'ac/dc',
+      'guns n roses',
+      'metallica',
+      'radiohead',
+      'muse',
+      'foo fighters',
+      'paramore',
+      'evanescence',
+      'the killers',
+      'oasis',
+      'bon jovi',
+      'u2',
+      'pink floyd',
+      'led zeppelin',
+      'the beatles',
+      'måneskin',
+      'maneskin',
+      'rock',
+    ],
+    peers: [
+      'Coldplay',
+      'Linkin Park',
+      'Imagine Dragons',
+      'OneRepublic',
+      'Queen',
+      'Nirvana',
+      'Green Day',
+      'Radiohead',
+      'The Killers',
+      'Red Hot Chili Peppers',
+      'Arctic Monkeys',
+    ],
+  },
+  {
+    id: 'bollywood-hindi',
+    keywords: [
+      'arijit singh',
+      'pritam',
+      'atif aslam',
+      'shreya ghoshal',
+      'a.r. rahman',
+      'ar rahman',
+      'kk',
+      'mohit chauhan',
+      'vishal-shekhar',
+      'vishal mishra',
+      'anuv jain',
+      'darshan raval',
+      'jubin nautiyal',
+      'sonu nigam',
+      'rahat fateh ali khan',
+      'mithoon',
+      'amit trivedi',
+      'shankar-ehsaan-loy',
+      'king',
+      'zaeden',
+      'prateek kuhad',
+      'sachin-jigar',
+      'tanishk bagchi',
+      'b praak',
+      'armaan malik',
+      'javed ali',
+      'shaan',
+      'lucky ali',
+      'bollywood',
+      'hindi',
+    ],
+    peers: [
+      'Arijit Singh',
+      'Pritam',
+      'Atif Aslam',
+      'Shreya Ghoshal',
+      'KK',
+      'Vishal Mishra',
+      'Anuv Jain',
+      'Darshan Raval',
+      'Mohit Chauhan',
+      'AR Rahman',
+      'Jubin Nautiyal',
+      'Sachin-Jigar',
+    ],
+  },
+  {
+    id: 'punjabi-desi',
+    keywords: [
+      'diljit dosanjh',
+      'karan aujla',
+      'ap dhillon',
+      'shubh',
+      'sidhu moose wala',
+      'gurinder gill',
+      'badshah',
+      'yo yo honey singh',
+      'harrdy sandhu',
+      'guru randhawa',
+      'talha anjum',
+      'imran khan',
+      'divine',
+      'raftaar',
+      'kr$na',
+      'ammy virk',
+      'jass manak',
+      'punjabi',
+      'desi',
+    ],
+    peers: [
+      'Karan Aujla',
+      'Diljit Dosanjh',
+      'AP Dhillon',
+      'Shubh',
+      'Sidhu Moose Wala',
+      'Gurinder Gill',
+      'Badshah',
+      'Guru Randhawa',
+      'Divine',
+      'Talha Anjum',
+    ],
+  },
+  {
+    id: 'kpop-asian',
+    keywords: [
+      'bts',
+      'blackpink',
+      'jungkook',
+      'newjeans',
+      'rosé',
+      'rose',
+      'lisa',
+      'jennie',
+      'stray kids',
+      'twice',
+      'seventeen',
+      'exo',
+      'aespa',
+      'le sserafim',
+      'illit',
+      'fifty fifty',
+      'jimin',
+      'iu',
+      'kpop',
+      'k-pop',
+    ],
+    peers: [
+      'Jungkook',
+      'NewJeans',
+      'BLACKPINK',
+      'BTS',
+      'ROSÉ',
+      'LISA',
+      'Stray Kids',
+      'TWICE',
+      'aespa',
+      'LE SSERAFIM',
+    ],
+  },
+  {
+    id: 'latin-afro',
+    keywords: [
+      'bad bunny',
+      'karol g',
+      'peso pluma',
+      'shakira',
+      'feid',
+      'rauw alejandro',
+      'j balvin',
+      'daddy yankee',
+      'maluma',
+      'ozuna',
+      'rosalia',
+      'rosalía',
+      'burna boy',
+      'rema',
+      'tems',
+      'wizkid',
+      'ayra starr',
+      'asake',
+      'omah lay',
+      'tyla',
+      'ckay',
+      'davido',
+      'afrobeats',
+      'latin',
+      'reggaeton',
+    ],
+    peers: [
+      'Bad Bunny',
+      'Rema',
+      'Burna Boy',
+      'Karol G',
+      'Tems',
+      'Wizkid',
+      'Rauw Alejandro',
+      'Feid',
+      'Tyla',
+      'Ayra Starr',
+    ],
+  },
+  {
+    id: 'retro-80s-90s',
+    keywords: [
+      'michael jackson',
+      'prince',
+      'tears for fears',
+      'a-ha',
+      'george michael',
+      'whitney houston',
+      'madonna',
+      'backstreet boys',
+      'britney spears',
+      'abba',
+      'bee gees',
+      'elton john',
+      'billy joel',
+      'fleetwood mac',
+      'modern talking',
+      'rick astley',
+      'phil collins',
+      '80s',
+      '90s',
+    ],
+    peers: [
+      'Michael Jackson',
+      'Prince',
+      'Tears for Fears',
+      'a-ha',
+      'Queen',
+      'Fleetwood Mac',
+      'George Michael',
+      'ABBA',
+      'Backstreet Boys',
+    ],
+  },
+];
+
+/**
+ * Builds 3 complementary search queries for a seed track (Primary Artist + Collaborator/Peer 1 + Peer 2)
+ * so recommendations feel like Spotify / Apple Music / YouTube Music Radio.
+ */
+function buildSmartRecommendationQueries(
+  seedTrack,
+  searchContextQuery = '',
+  searchContextResults = null,
+  seedOffset = 0
+) {
+  const rawArtist = String(seedTrack?.artist || '').trim();
+  const rawTitle = String(seedTrack?.title || '').trim();
+  const artistParts = rawArtist
+    .split(/[,&/]|feat\.?|ft\.?|with/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 2 && !GENERIC_REC_ARTISTS.has(s.toLowerCase()));
+
+  const primaryArtist = artistParts[0] || '';
+  const collabArtists = artistParts.slice(1);
+
+  const combinedLookup = `${rawArtist} ${rawTitle} ${searchContextQuery}`.toLowerCase();
+
+  let matchedPeers = [];
+  for (const cluster of SIMILAR_ARTIST_CLUSTERS) {
+    if (cluster.keywords.some((kw) => combinedLookup.includes(kw))) {
+      for (const peer of cluster.peers) {
+        if (
+          !primaryArtist ||
+          !peer.toLowerCase().includes(primaryArtist.toLowerCase())
+        ) {
+          if (!matchedPeers.includes(peer)) {
+            matchedPeers.push(peer);
+          }
+        }
+      }
+    }
+  }
+
+  // Also harvest distinct artists from the user's current search results context (if available)
+  const searchPeers = [];
+  if (Array.isArray(searchContextResults)) {
+    for (const item of searchContextResults) {
+      const itemArtists = String(item?.artist || '')
+        .split(/[,&/]|feat\.?|ft\.?|with/i)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 2 && !GENERIC_REC_ARTISTS.has(s.toLowerCase()));
+      for (const ia of itemArtists) {
+        if (
+          ia.toLowerCase() !== primaryArtist.toLowerCase() &&
+          !searchPeers.some((sp) => sp.toLowerCase() === ia.toLowerCase())
+        ) {
+          searchPeers.push(ia);
+        }
+      }
+    }
+  }
+
+  // Fallback global Pop/R&B peers if an unknown/custom track has no cluster match
+  if (matchedPeers.length === 0) {
+    matchedPeers = [
+      ...searchPeers,
+      'The Weeknd',
+      'Bruno Mars',
+      'SZA',
+      'Dua Lipa',
+      'Billie Eilish',
+      'Post Malone',
+      'Travis Scott',
+      'Ariana Grande',
+    ];
+  } else if (searchPeers.length > 0) {
+    // Blend search context artists with genre cluster peers
+    matchedPeers = [...new Set([...searchPeers.slice(0, 2), ...matchedPeers])];
+  }
+
+  const queries = [];
+  if (primaryArtist) {
+    queries.push(primaryArtist);
+  }
+  if (collabArtists.length > 0) {
+    queries.push(collabArtists[0]);
+  }
+
+  if (matchedPeers.length > 0) {
+    const idx1 = seedOffset % matchedPeers.length;
+    const idx2 = (seedOffset + 1) % matchedPeers.length;
+    const idx3 = (seedOffset + 2) % matchedPeers.length;
+    for (const idx of [idx1, idx2, idx3]) {
+      const peer = matchedPeers[idx];
+      if (peer && !queries.some((q) => q.toLowerCase() === peer.toLowerCase())) {
+        queries.push(peer);
+      }
+      if (queries.length >= 3) break;
+    }
+  }
+
+  if (queries.length === 0) {
+    queries.push('The Weeknd', 'Bruno Mars', 'Dua Lipa');
+  }
+
+  return queries.slice(0, 3);
+}
+
 export default function DeckStage() {
   const containerRef = useRef(null);
   const engineRef = useRef(null);
@@ -66,20 +690,24 @@ export default function DeckStage() {
   const coverInputRef = useRef(null);
   const cassetteListRef = useRef([]);
   const recommendedListRef = useRef([]);
-  const queueModeRef = useRef('saved');
+  const queueModeRef = useRef('recommended');
   const playedHistoryRef = useRef(new Set());
   const recSeedIdxRef = useRef(0);
+  const recRequestIdRef = useRef(0);
   const recFetchInFlightRef = useRef(false);
   const maxAnisoRef = useRef(4);
   const transientCassetteRef = useRef(null);
+  const activeCassetteObjRef = useRef(null);
+  const recAutoPlayReqIdRef = useRef(0);
   const playerColorIdRef = useRef('champagne');
 
   // Cassette Player & Sequenced Cassette Collection UI State
   const [ready, setReady] = useState(false);
   const [cassetteList, setCassetteList] = useState([]);
   const [recommendedList, setRecommendedList] = useState([]);
+  const [recSeedLabel, setRecSeedLabel] = useState('');
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
-  const [queueMode, setQueueMode] = useState('saved'); // 'saved' | 'recommended'
+  const [queueMode, setQueueMode] = useState('recommended'); // 'recommended' (default like real music apps) | 'saved'
   const [volume, setVolume] = useState(0.85);
   const [muted, setMuted] = useState(false);
   const [transientCassette, setTransientCassette] = useState(null);
@@ -91,7 +719,7 @@ export default function DeckStage() {
   const [playerColorId, setPlayerColorId] = useState('champagne');
   const [hoveredColorId, setHoveredColorId] = useState(null);
   const [shareCopied, setShareCopied] = useState(false);
-  const [transportMode, setTransportMode] = useState('PLAY'); // 'PLAY' | 'PAUSE' | 'REW' | 'FF' | 'STOP'
+  const [transportMode, setTransportMode] = useState('STOP'); // 'PLAY' | 'PAUSE' | 'REW' | 'FF' | 'STOP'
   const [doorOpen, setDoorOpen] = useState(false);
   const [tapeEjected, setTapeEjected] = useState(false);
   const [dismantled, setDismantled] = useState(false);
@@ -122,20 +750,28 @@ export default function DeckStage() {
   const [showSpotifyEmbed, setShowSpotifyEmbed] = useState(false);
   const [draftCoverImg, setDraftCoverImg] = useState(null);
   const [draftCoverPreview, setDraftCoverPreview] = useState(null);
-  const [songProgress, setSongProgress] = useState({ currentTime: 0, duration: 0, progress: 0 });
+  const [songProgress, setSongProgress] = useState({
+    currentTime: 0,
+    duration: 0,
+    progress: 0,
+    isFetching: true,
+  });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // 1. Initialize Clean Hardware-Antialiased WebGLRenderer with Supersampled Clarity
+    // 1. Initialize Clean Hardware-Antialiased WebGLRenderer with Adaptive Mobile/Desktop Clarity
+    const isInitialMobile = typeof window !== 'undefined' && window.innerWidth <= 820;
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
-      powerPreference: 'high-performance',
       alpha: false,
     });
-    const dpr = Math.min((window.devicePixelRatio || 1) * 1.25, 2.5);
+    const dpr = Math.min(
+      (window.devicePixelRatio || 1) * (isInitialMobile ? 1.0 : 1.25),
+      isInitialMobile ? 1.65 : 2.25
+    );
     renderer.setPixelRatio(dpr);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -204,17 +840,24 @@ export default function DeckStage() {
         : true;
 
     const initialQueueMode =
-      savedPrefs?.queueMode === 'recommended' ? 'recommended' : 'saved';
+      savedPrefs?.queueModeV2 === 'saved' ? 'saved' : 'recommended';
     const initialVolume =
       typeof savedPrefs?.volume === 'number' && isFinite(savedPrefs.volume)
         ? Math.max(0, Math.min(1, savedPrefs.volume))
         : 0.85;
     const initialMuted = Boolean(savedPrefs?.muted);
 
-    const initialLeftOpen =
-      savedPrefs?.leftPanelOpen !== undefined ? Boolean(savedPrefs.leftPanelOpen) : true;
-    const initialRightOpen =
-      savedPrefs?.rightPanelOpen !== undefined ? Boolean(savedPrefs.rightPanelOpen) : true;
+    // On mobile viewports (<= 820px), start with side drawers collapsed so the 3D Krystal KD-01 player is front and center
+    const initialLeftOpen = isInitialMobile
+      ? false
+      : savedPrefs?.leftPanelOpen !== undefined
+      ? Boolean(savedPrefs.leftPanelOpen)
+      : true;
+    const initialRightOpen = isInitialMobile
+      ? false
+      : savedPrefs?.rightPanelOpen !== undefined
+      ? Boolean(savedPrefs.rightPanelOpen)
+      : true;
 
     playerColorIdRef.current = initialSkinId;
     queueModeRef.current = initialQueueMode;
@@ -382,6 +1025,7 @@ export default function DeckStage() {
       initialCollection.find((c) => c.id === preferredActiveId) || initialCollection[0];
 
     cassetteListRef.current = initialCollection;
+    activeCassetteObjRef.current = initialActiveItem;
     setCassetteList(initialCollection);
     setActiveCassetteId(initialActiveItem.id);
 
@@ -416,10 +1060,11 @@ export default function DeckStage() {
     scene.add(backdropMesh);
 
     // 7. Build Detailed 3D FiiO CP13-Style Cassette Player & Removable Cassette
-    const walkman = buildWalkmanPlayerScene(renderer, initialActiveItem.texture);
-    if (playerColorIdRef.current) {
-      walkman.setColorVariant?.(playerColorIdRef.current);
-    }
+    const walkman = buildWalkmanPlayerScene(
+      renderer,
+      initialActiveItem.texture,
+      playerColorIdRef.current
+    );
     scene.environment = walkman.envMap;
     scene.add(walkman.playerRoot);
 
@@ -445,6 +1090,9 @@ export default function DeckStage() {
       if (transientCassetteRef.current && transientCassetteRef.current.id === casId) {
         return transientCassetteRef.current;
       }
+      if (activeCassetteObjRef.current && activeCassetteObjRef.current.id === casId) {
+        return activeCassetteObjRef.current;
+      }
       return cassetteListRef.current[0];
     };
 
@@ -457,7 +1105,7 @@ export default function DeckStage() {
     // CASSETTE PLAYER STATE, 360° CENTER INSPECT & 6-STAGE DUAL-CASSETTE SWAP
     // ============================================================================
     const st = {
-      mode: 'PLAY', // 'PLAY' | 'PAUSE' | 'REW' | 'FF' | 'STOP'
+      mode: 'STOP', // 'PLAY' | 'PAUSE' | 'REW' | 'FF' | 'STOP'
       doorOpen: false,
       tapeEjected: false,
       dismantled: false,
@@ -561,7 +1209,7 @@ export default function DeckStage() {
           target.coverDataUrl = compressedDataUrl;
           target.coverUrl = compressedDataUrl;
         }
-        if (st.currentCassetteId === target.id) {
+        if (st.currentCassetteId === target.id && !st.choreoActive) {
           walkman.activeCassette.artMat.map = newTex;
           walkman.activeCassette.artMat.emissiveMap = newTex;
           walkman.activeCassette.artMat.needsUpdate = true;
@@ -587,21 +1235,29 @@ export default function DeckStage() {
       if (!container) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
-      const curDpr = Math.min(window.devicePixelRatio || 1, 2);
+      const isMobile = w <= 780;
+      const isPortraitMobile = w < 640 && w < h;
+      st.isPortraitMobile = isPortraitMobile;
+
+      const curDpr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.65 : 2.0);
       renderer.setPixelRatio(curDpr);
       renderer.setSize(w, h);
 
-      camera.aspect = w / h;
+      camera.aspect = w / Math.max(1, h);
+      camera.fov = isPortraitMobile ? 30.5 : 27;
       camera.clearViewOffset?.();
       camera.updateProjectionMatrix();
 
-      const aspect = w / Math.max(1, h - DOCK_CLEAR);
-      st.sceneScale = Math.min(0.84, Math.max(0.54, aspect * 0.64));
+      const clearBottom = isMobile ? 136 : DOCK_CLEAR;
+      const aspect = w / Math.max(1, h - clearBottom);
+      st.sceneScale = isPortraitMobile
+        ? Math.min(0.76, Math.max(0.58, aspect * 0.92))
+        : Math.min(0.84, Math.max(0.54, aspect * 0.64));
       backdropMat.uniforms.uScale.value = st.sceneScale;
     };
 
     updateLayout();
-    window.addEventListener('resize', updateLayout);
+    window.addEventListener('resize', updateLayout, { passive: true });
 
     // Pre-configure `incomingCassette` with the new tape's artwork & shell tint BEFORE it glides in!
     const prepareIncomingCassette = (casId) => {
@@ -617,17 +1273,13 @@ export default function DeckStage() {
       walkman.incomingCassette.reelRight.rotation.z = st.reelAngle * 1.18;
     };
 
-    // Commit incoming cassette texture, shell tint, and audio onto `activeCassette`
-    const commitIncomingCassetteToActive = (casId) => {
-      const item = getCassetteById(casId);
+    // Loads or pre-warms a cassette's audio source without restarting if already loaded
+    const loadCassetteAudioSource = (item) => {
       if (!item) return;
-
-      walkman.activeCassette.artMat.map = item.texture;
-      walkman.activeCassette.artMat.emissiveMap = item.texture;
-      walkman.activeCassette.artMat.needsUpdate = true;
-      walkman.activeCassette.shellMat.color.copy(
-        getShellColorForAccent(item.shellAccent)
-      );
+      const alreadyLoaded =
+        st.loadedAudioCassetteId === item.id &&
+        (!item.streamUrl || st.loadedAudioStreamUrl === item.streamUrl);
+      if (alreadyLoaded) return;
 
       if (item.streamUrl) {
         audio.loadRemoteAudioStream(item.streamUrl);
@@ -643,9 +1295,26 @@ export default function DeckStage() {
         setShowSpotifyEmbed(false);
       }
 
-      st.currentCassetteId = item.id;
       st.loadedAudioCassetteId = item.id;
       st.loadedAudioStreamUrl = item.streamUrl || null;
+    };
+
+    // Commit incoming cassette texture, shell tint, and audio onto `activeCassette`
+    const commitIncomingCassetteToActive = (casId) => {
+      const item = getCassetteById(casId);
+      if (!item) return;
+
+      activeCassetteObjRef.current = item;
+      walkman.activeCassette.artMat.map = item.texture;
+      walkman.activeCassette.artMat.emissiveMap = item.texture;
+      walkman.activeCassette.artMat.needsUpdate = true;
+      walkman.activeCassette.shellMat.color.copy(
+        getShellColorForAccent(item.shellAccent)
+      );
+
+      loadCassetteAudioSource(item);
+
+      st.currentCassetteId = item.id;
       setActiveCassetteId(item.id);
 
       const historyKey =
@@ -660,7 +1329,30 @@ export default function DeckStage() {
       if (!item.isTransient && !item.isRecommended) {
         savePrefsToStorage({ activeCassetteId: item.id });
       }
+
+      // Pre-warm direct 320kbps MP3 URLs for the adjacent tracks in Recommended & Saved queues
+      // so mobile lock-screen Next/Prev and auto-advance switch instantaneously with zero network delay!
+      const recQ = recommendedListRef.current || [];
+      const savedQ = cassetteListRef.current || [];
+      const recIdx = recQ.findIndex((c) => c.id === item.id);
+      const candidates = [
+        ...(recIdx >= 0
+          ? [recQ[recIdx + 1], recQ[recIdx + 2], recQ[(recIdx - 1 + recQ.length) % recQ.length]]
+          : recQ.slice(0, 3)),
+        ...savedQ.slice(0, 2),
+      ];
+      for (const cand of candidates) {
+        if (cand?.streamUrl) {
+          audio.prewarmStreamUrl(cand.streamUrl);
+        }
+      }
     };
+
+    // Configure initial cassette in STOP mode immediately on mount so the engine never defaults to the 28s synth preset
+    walkman.setLedState?.(false);
+    audio.setTransportMode('STOP');
+    commitIncomingCassetteToActive(initialActiveItem.id);
+    setSongProgress(audio.getCustomAudioProgress());
 
     // --- Expose Cassette Player & Collection Controls ---
     stageApiRef.current = {
@@ -680,27 +1372,63 @@ export default function DeckStage() {
         audio.playMechanicalClick('button');
       },
 
-      playNextCassette: () => {
-        if (queueModeRef.current === 'recommended') {
+      playNextCassette: ({ fromMediaSession = false } = {}) => {
+        const curItem = getCassetteById(st.currentCassetteId);
+        const immediateSwap =
+          Boolean(fromMediaSession) || (typeof document !== 'undefined' && document.hidden);
+        // Play from Recommended by default OR whenever the finishing track was an online search track or recommended track
+        const shouldPlayRecommended =
+          queueModeRef.current === 'recommended' ||
+          Boolean(curItem?.isTransient) ||
+          Boolean(curItem?.isRecommended);
+
+        if (shouldPlayRecommended) {
+          if (queueModeRef.current !== 'recommended') {
+            queueModeRef.current = 'recommended';
+            setQueueMode('recommended');
+          }
           const recList = recommendedListRef.current;
           if (recList && recList.length > 0) {
             const curIdx = recList.findIndex((c) => c.id === st.currentCassetteId);
-            const nextIdx = curIdx >= 0 ? curIdx + 1 : 0;
-            if (nextIdx < recList.length) {
-              const nextRec = recList[nextIdx];
+            let nextRec = null;
+            let nextIdx = -1;
+
+            if (curIdx >= 0) {
+              if (curIdx + 1 < recList.length) {
+                nextIdx = curIdx + 1;
+                nextRec = recList[nextIdx];
+              }
+            } else {
+              // Finishing an online search track or seed track: pick the first unplayed recommended song
+              const curTitleKey = normalizeRecTitleKey(curItem?.title || '');
+              nextIdx = recList.findIndex((r) => {
+                if (r.id === st.currentCassetteId) return false;
+                if (curTitleKey && normalizeRecTitleKey(r.title) === curTitleKey) return false;
+                const hKey =
+                  r.onlineTrackId ||
+                  r.externalId ||
+                  r.youtubeId ||
+                  `${(r.title || '').toLowerCase()}|${(r.artist || '').toLowerCase()}`;
+                return !playedHistoryRef.current.has(hKey);
+              });
+              if (nextIdx < 0) nextIdx = 0;
+              nextRec = recList[nextIdx];
+            }
+
+            if (nextRec) {
               stageApiRef.current.changeCassetteById?.(nextRec.id, {
                 forceSwapEvenIfSame: true,
                 forcePlay: true,
+                immediateSwap,
               });
               // Automatically replenish recommendations when nearing the end of the queue!
-              if (recList.length - nextIdx <= 3) {
+              if (recList.length - nextIdx <= 4) {
                 stageApiRef.current.fetchMoreRecommendations?.(nextRec, { append: true });
               }
               return;
             }
           }
           // If recommended queue is empty or exhausted, fetch fresh recommendations and play immediately!
-          const curItem = getCassetteById(st.currentCassetteId);
           stageApiRef.current.fetchMoreRecommendations?.(curItem, {
             append: false,
             playFirstWhenReady: true,
@@ -716,15 +1444,23 @@ export default function DeckStage() {
           stageApiRef.current.changeCassetteById?.(nextItem.id, {
             forceSwapEvenIfSame: true,
             forcePlay: true,
+            immediateSwap,
           });
         }
       },
 
-      playPrevCassette: () => {
-        const activeList =
-          queueModeRef.current === 'recommended' && recommendedListRef.current.length > 0
-            ? recommendedListRef.current
-            : cassetteListRef.current;
+      playPrevCassette: ({ fromMediaSession = false } = {}) => {
+        const curItem = getCassetteById(st.currentCassetteId);
+        const immediateSwap =
+          Boolean(fromMediaSession) || (typeof document !== 'undefined' && document.hidden);
+        const useRec =
+          (queueModeRef.current === 'recommended' ||
+            curItem?.isTransient ||
+            curItem?.isRecommended) &&
+          recommendedListRef.current.length > 0;
+        const activeList = useRec
+          ? recommendedListRef.current
+          : cassetteListRef.current;
         if (!activeList || activeList.length === 0) return;
         const curIdx = activeList.findIndex((c) => c.id === st.currentCassetteId);
         const baseIdx = curIdx >= 0 ? curIdx : 0;
@@ -733,125 +1469,155 @@ export default function DeckStage() {
           stageApiRef.current.changeCassetteById?.(prevItem.id, {
             forceSwapEvenIfSame: true,
             forcePlay: true,
+            immediateSwap,
           });
         }
       },
 
       /**
-       * Fetches a fresh batch of recommended songs based on the current/seed track and saved collection,
-       * presses them onto 3D cassette textures, and populates or appends to `recommendedList`.
+       * Smart Song Radio & Recommendation Engine (Spotify / Apple Music / YouTube Music style):
+       * Fetches a curated, interleaved mix of songs by the seed track's artist + genre/vibe peer artists,
+       * strictly excluding the user's Saved cassettes so Recommended only plays fresh recommendations!
        */
       fetchMoreRecommendations: async (
         seedTrack = null,
-        { append = false, playFirstWhenReady = false } = {}
+        {
+          append = false,
+          playFirstWhenReady = false,
+          searchContextResults = null,
+          searchContextQuery = '',
+        } = {}
       ) => {
         if (recFetchInFlightRef.current && append) return;
+        const reqId = ++recRequestIdRef.current;
+        if (playFirstWhenReady) {
+          recAutoPlayReqIdRef.current = reqId;
+        }
         recFetchInFlightRef.current = true;
         setIsLoadingRecommendations(true);
 
         try {
           const curItem = seedTrack || getCassetteById(st.currentCassetteId);
           const savedList = cassetteListRef.current || [];
-          const genericArtists = new Set([
-            'krystal audio lab',
-            'studio master',
-            'featured artist',
-            'unknown artist',
-            'custom track',
-          ]);
 
-          const candidateQueries = [];
-          if (
-            curItem?.artist &&
-            !genericArtists.has(curItem.artist.toLowerCase().trim())
-          ) {
-            const primaryArtist = curItem.artist.split(',')[0].trim();
-            candidateQueries.push(`${primaryArtist} hits`);
-            if (curItem.title) {
-              candidateQueries.push(`${primaryArtist} ${curItem.title}`);
-            }
+          if (!append && curItem?.title) {
+            const cleanArtist =
+              curItem.artist && !GENERIC_REC_ARTISTS.has(curItem.artist.toLowerCase().trim())
+                ? ` · ${curItem.artist.split(',')[0].trim()}`
+                : '';
+            setRecSeedLabel(`${curItem.title}${cleanArtist}`);
           }
 
-          for (let i = 0; i < savedList.length; i++) {
-            const s = savedList[i];
-            if (s?.artist && !genericArtists.has(s.artist.toLowerCase().trim())) {
-              const primary = s.artist.split(',')[0].trim();
-              if (!candidateQueries.includes(`${primary} hits`)) {
-                candidateQueries.push(`${primary} hits`);
-              }
-            }
-          }
-
-          const discoverySeeds = [
-            'The Weeknd synthwave hits',
-            'Daft Punk electronic classics',
-            'Dua Lipa Tame Impala pop',
-            'M83 Kavinsky retro synth',
-            'Empire of the Sun Glass Animals',
-            'Michael Jackson Prince 80s hits',
-            'Coldplay Imagine Dragons hits',
-            'Post Malone Bruno Mars hits',
-          ];
-          for (let i = 0; i < discoverySeeds.length; i++) {
-            candidateQueries.push(discoverySeeds[i]);
-          }
-
-          const queryIdx = recSeedIdxRef.current % candidateQueries.length;
+          const seedOffset = recSeedIdxRef.current;
           recSeedIdxRef.current += 1;
-          const chosenQuery = candidateQueries[queryIdx] || 'The Weeknd Daft Punk hits';
 
-          let searchData = await searchOnlineSongsClientFallback(chosenQuery);
-          let rawResults = Array.isArray(searchData?.results) ? searchData.results : [];
+          const smartQueries = buildSmartRecommendationQueries(
+            curItem,
+            searchContextQuery,
+            searchContextResults,
+            seedOffset
+          );
 
+          // Fetch all 3 artist/peer queries in parallel for an authentic multi-artist radio mix
+          const bucketResponses = await Promise.all(
+            smartQueries.map((q) => searchOnlineSongsClientFallback(q).catch(() => null))
+          );
+
+          const buckets = bucketResponses
+            .map((res) => (Array.isArray(res?.results) ? res.results : []))
+            .filter((b) => b.length > 0);
+
+          // If the user just searched and tapped Play manually, weave in other matching hits from their search context
+          if (Array.isArray(searchContextResults) && searchContextResults.length > 1) {
+            buckets.push(searchContextResults);
+          }
+
+          // Build strict exclusion sets:
+          // 1. Exclude the currently playing / seed track
+          // 2. Exclude ALL songs in the user's Saved Cassette Collection so Recommended never repeats Saved songs!
+          // 3. Exclude already-recommended songs (when appending) and recently played tracks
           const existingIds = new Set();
           const existingTitles = new Set();
+
           if (curItem) {
+            if (curItem.id) existingIds.add(curItem.id);
             if (curItem.externalId) existingIds.add(curItem.externalId);
             if (curItem.onlineTrackId) existingIds.add(curItem.onlineTrackId);
-            if (curItem.title) existingTitles.add(curItem.title.toLowerCase().trim());
+            if (curItem.title) existingTitles.add(normalizeRecTitleKey(curItem.title));
           }
+
+          for (const saved of savedList) {
+            if (!saved) continue;
+            if (saved.id) existingIds.add(saved.id);
+            if (saved.externalId) existingIds.add(saved.externalId);
+            if (saved.onlineTrackId) existingIds.add(saved.onlineTrackId);
+            if (saved.title) existingTitles.add(normalizeRecTitleKey(saved.title));
+          }
+
           if (append) {
             for (const r of recommendedListRef.current) {
               if (r.externalId) existingIds.add(r.externalId);
               if (r.onlineTrackId) existingIds.add(r.onlineTrackId);
-              if (r.title) existingTitles.add(r.title.toLowerCase().trim());
+              if (r.title) existingTitles.add(normalizeRecTitleKey(r.title));
             }
           }
+
           for (const h of playedHistoryRef.current) {
             existingIds.add(h);
           }
 
-          let filtered = rawResults.filter((t) => {
-            if (!t || (!t.streamUrl && !t.youtubeId)) return false;
-            const normTitle = (t.title || '').toLowerCase().trim();
-            if (existingIds.has(t.id) || existingTitles.has(normTitle)) return false;
-            return true;
-          });
+          // Round-robin interleave across the parallel artist/peer buckets + cap per-artist frequency
+          const interleaved = [];
+          const artistCounts = new Map();
+          const maxBucketLen = Math.max(...buckets.map((b) => b.length), 0);
 
-          // If too few tracks after filtering, fetch a fallback discovery seed
-          if (filtered.length < 4) {
+          for (let row = 0; row < maxBucketLen; row++) {
+            for (let col = 0; col < buckets.length; col++) {
+              const t = buckets[col][row];
+              if (!t || (!t.streamUrl && !t.youtubeId)) continue;
+              const titleKey = normalizeRecTitleKey(t.title);
+              if (!titleKey || existingIds.has(t.id) || existingTitles.has(titleKey)) {
+                continue;
+              }
+              const primaryArtKey = String(t.artist || '')
+                .toLowerCase()
+                .split(/[,&]|feat\.?|ft\.?/i)[0]
+                .replace(/[^a-z0-9]/g, '')
+                .slice(0, 14);
+              const curArtCount = artistCounts.get(primaryArtKey) || 0;
+              if (primaryArtKey && curArtCount >= 3) continue;
+
+              existingIds.add(t.id);
+              existingTitles.add(titleKey);
+              if (primaryArtKey) artistCounts.set(primaryArtKey, curArtCount + 1);
+              interleaved.push(t);
+            }
+          }
+
+          // Fallback if history filtered out everything
+          if (interleaved.length < 4) {
+            playedHistoryRef.current.clear();
             const fallbackQuery =
-              discoverySeeds[recSeedIdxRef.current % discoverySeeds.length];
-            recSeedIdxRef.current += 1;
+              smartQueries[smartQueries.length - 1] || 'The Weeknd Bruno Mars SZA';
             const fbData = await searchOnlineSongsClientFallback(fallbackQuery);
             const fbResults = Array.isArray(fbData?.results) ? fbData.results : [];
             for (const t of fbResults) {
               if (!t || (!t.streamUrl && !t.youtubeId)) continue;
-              const normTitle = (t.title || '').toLowerCase().trim();
+              const titleKey = normalizeRecTitleKey(t.title);
               if (
+                titleKey &&
                 !existingIds.has(t.id) &&
-                !existingTitles.has(normTitle) &&
-                !filtered.some((f) => f.id === t.id)
+                !existingTitles.has(titleKey)
               ) {
-                filtered.push(t);
+                existingIds.add(t.id);
+                existingTitles.add(titleKey);
+                interleaved.push(t);
               }
             }
           }
 
-          if (filtered.length === 0 && rawResults.length > 0) {
-            playedHistoryRef.current.clear();
-            filtered = rawResults.filter((t) => t && (t.streamUrl || t.youtubeId));
-          }
+          // Ignore if a newer recommendation request was triggered while we were awaiting network responses
+          if (reqId !== recRequestIdRef.current) return;
 
           const accentPalette = [
             '#ff3b1f',
@@ -862,7 +1628,7 @@ export default function DeckStage() {
             '#ec4899',
           ];
 
-          const newRecEntries = filtered.slice(0, 10).map((track, idx) => {
+          const newRecEntries = interleaved.slice(0, 12).map((track, idx) => {
             const accentColor =
               track.accentColor || accentPalette[idx % accentPalette.length];
             const { texture, dataUrl } = createCustomSongTexture({
@@ -922,12 +1688,10 @@ export default function DeckStage() {
                     recEntry.coverDataUrl = comp;
                     recEntry.thumbUrl = comp;
                   }
-                  if (st.currentCassetteId === recEntry.id) {
-                    setCassetteArtwork(
-                      walkman.activeCassette,
-                      hydratedTex,
-                      recEntry.shellAccent
-                    );
+                  if (st.currentCassetteId === recEntry.id && !st.choreoActive) {
+                    walkman.activeCassette.artMat.map = hydratedTex;
+                    walkman.activeCassette.artMat.emissiveMap = hydratedTex;
+                    walkman.activeCassette.artMat.needsUpdate = true;
                   }
                   if (oldTex && oldTex !== hydratedTex) {
                     setTimeout(() => oldTex.dispose(), 1500);
@@ -940,24 +1704,43 @@ export default function DeckStage() {
           });
 
           if (newRecEntries.length > 0) {
+            const activeItem = activeCassetteObjRef.current;
+            const preserveActiveRec =
+              !append &&
+              activeItem &&
+              activeItem.isRecommended &&
+              !newRecEntries.some((r) => r.id === activeItem.id);
             const nextRecList = append
-              ? [...recommendedListRef.current, ...newRecEntries].slice(-24)
+              ? [...recommendedListRef.current, ...newRecEntries].slice(-28)
+              : preserveActiveRec
+              ? [activeItem, ...newRecEntries]
               : newRecEntries;
             recommendedListRef.current = nextRecList;
             setRecommendedList(nextRecList);
 
-            if (playFirstWhenReady) {
+            // Pre-warm direct 320kbps MP3 URLs for the top 3 recommended tracks so lock-screen Next/Prev is instant
+            for (const entry of nextRecList.slice(0, 3)) {
+              if (entry?.streamUrl) {
+                audio.prewarmStreamUrl(entry.streamUrl);
+              }
+            }
+
+            if (playFirstWhenReady && recAutoPlayReqIdRef.current === reqId) {
+              recAutoPlayReqIdRef.current = 0;
               stageApiRef.current.changeCassetteById?.(newRecEntries[0].id, {
                 forceSwapEvenIfSame: true,
                 forcePlay: true,
+                immediateSwap: typeof document !== 'undefined' && document.hidden,
               });
             }
           }
         } catch {
           // Ignore transient network errors during background recommendation fetch
         } finally {
-          recFetchInFlightRef.current = false;
-          setIsLoadingRecommendations(false);
+          if (reqId === recRequestIdRef.current) {
+            recFetchInFlightRef.current = false;
+            setIsLoadingRecommendations(false);
+          }
         }
       },
 
@@ -1522,10 +2305,16 @@ export default function DeckStage() {
        */
       changeCassetteById: (
         nextCasId,
-        { forceSwapEvenIfSame = false, forcePlay = false } = {}
+        { forceSwapEvenIfSame = false, forcePlay = false, immediateSwap = false } = {}
       ) => {
         const targetItem = getCassetteById(nextCasId);
         if (!targetItem) return;
+
+        // Cancel any pending recommendation auto-play callback so background fetches never revert the user's choice
+        recAutoPlayReqIdRef.current = 0;
+        const prevCassetteId = st.choreoActive ? st.pendingCassetteId : st.currentCassetteId;
+        activeCassetteObjRef.current = targetItem;
+
         if (!targetItem.isTransient && !targetItem.isRecommended) {
           savePrefsToStorage({ activeCassetteId: targetItem.id });
         }
@@ -1547,13 +2336,14 @@ export default function DeckStage() {
           setDismantled(false);
         }
 
-        // If the browser tab is hidden (`document.hidden`), `requestAnimationFrame` is paused by the browser.
-        // Switch and play the next cassette IMMEDIATELY in the background without waiting for the 3D swap animation!
-        if (typeof document !== 'undefined' && document.hidden) {
+        // If triggered from mobile lock-screen/notification MediaSession (`immediateSwap`) or when tab is hidden (`document.hidden`),
+        // `requestAnimationFrame` is paused/throttled by the OS. Switch and play the next cassette IMMEDIATELY!
+        if (immediateSwap || (typeof document !== 'undefined' && document.hidden)) {
           audio._preloadingStream = false;
           audio._preloadingYouTube = false;
           st.choreoActive = false;
           st.midAirSwapped = true;
+          st.currentCassetteId = targetItem.id;
           st.pendingCassetteId = targetItem.id;
           st.tapeEjected = false;
           st.targetEjectLift = 0.0;
@@ -1601,7 +2391,7 @@ export default function DeckStage() {
             st.choreoActive = false;
           }
 
-          if (targetItem.id === st.currentCassetteId && !forceSwapEvenIfSame) {
+          if (targetItem.id === prevCassetteId && !forceSwapEvenIfSame) {
             st.inspectVelYaw = 0.0;
             st.inspectVelPitch = 0.0;
             audio.playMechanicalClick('button');
@@ -1610,6 +2400,8 @@ export default function DeckStage() {
 
           audio.playMechanicalClick('button');
           prepareIncomingCassette(targetItem.id);
+          loadCassetteAudioSource(targetItem);
+          setSongProgress(audio.getCustomAudioProgress());
 
           st.currentEjectLift = 1.0;
           st.targetEjectLift = 1.0;
@@ -1620,6 +2412,7 @@ export default function DeckStage() {
           st.choreoType = 'INSPECT_SWAP';
           st.choreoTime = 0.0;
           st.choreoDuration = 0.68;
+          st.currentCassetteId = targetItem.id;
           st.pendingCassetteId = targetItem.id;
           st.midAirSwapped = false;
           setActiveCassetteId(targetItem.id);
@@ -1629,8 +2422,11 @@ export default function DeckStage() {
         // 2. In-Player Cassette Switch (or `forcePlay === true`)
         if (st.choreoActive) {
           // If a swap is already mid-animation, smoothly retarget to the newly selected cassette!
+          st.currentCassetteId = targetItem.id;
           st.pendingCassetteId = targetItem.id;
           prepareIncomingCassette(targetItem.id);
+          loadCassetteAudioSource(targetItem);
+          setSongProgress(audio.getCustomAudioProgress());
           if (st.midAirSwapped) {
             commitIncomingCassetteToActive(targetItem.id);
           }
@@ -1638,7 +2434,7 @@ export default function DeckStage() {
           return;
         }
 
-        if (targetItem.id === st.currentCassetteId && !forceSwapEvenIfSame) {
+        if (targetItem.id === prevCassetteId && !forceSwapEvenIfSame) {
           commitIncomingCassetteToActive(targetItem.id);
           const nextMode =
             forcePlay || !wasUnlocked
@@ -1665,12 +2461,15 @@ export default function DeckStage() {
         audio.playMechanicalClick('button');
 
         prepareIncomingCassette(targetItem.id);
+        loadCassetteAudioSource(targetItem);
+        setSongProgress(audio.getCustomAudioProgress());
 
         st.choreoActive = true;
         st.choreoType = 'SWAP';
         st.choreoTime = 0.0;
         st.choreoDuration = 1.75;
         st.choreoStartDoorAngle = st.doorAngle;
+        st.currentCassetteId = targetItem.id;
         st.pendingCassetteId = targetItem.id;
         st.midAirSwapped = false;
         st.ejectClickPlayed = false;
@@ -1869,9 +2668,9 @@ export default function DeckStage() {
     };
 
     const domEl = renderer.domElement;
-    domEl.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
+    domEl.addEventListener('pointerdown', onPointerDown, { passive: true });
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerUp, { passive: true });
 
     // Keyboard Shortcuts
     const onKeyDown = (e) => {
@@ -2335,11 +3134,13 @@ export default function DeckStage() {
       const baseRoll = 0.0;
 
       // Balanced Vertical Centerline (`y = 0.5 * st.sceneScale`) — sits centered between top bar and dock with zero frustum offset!
-      const baseCenterY = 0.5;
+      const baseCenterY = st.isPortraitMobile ? 2.5 : 0.5;
+      const ejectShiftX = st.isPortraitMobile ? -18.0 : -76.0;
+      const ejectShiftY = st.isPortraitMobile ? -38.0 : 0.0;
       const playerScale = st.sceneScale * (1.0 - 0.30 * centerBlend) * (1.0 - 0.14 * explodeT);
       walkman.playerRoot.position.set(
-        (-76.0 * centerBlend - orbitSin * 14.0) * st.sceneScale,
-        (baseCenterY - orbitSin * 16.0) * st.sceneScale,
+        (ejectShiftX * centerBlend - orbitSin * 14.0) * st.sceneScale,
+        (baseCenterY + ejectShiftY * centerBlend - orbitSin * 16.0) * st.sceneScale,
         -18.0 * centerBlend - orbitSin * 20.0
       );
       walkman.playerRoot.scale.setScalar(playerScale);
@@ -2401,10 +3202,10 @@ export default function DeckStage() {
         walkman.incomingCassette.group.updateMatrixWorld(true);
       }
 
-      const heroX = 52.0 * st.sceneScale;
-      const heroY = baseCenterY * st.sceneScale;
+      const heroX = (st.isPortraitMobile ? 6.0 : 52.0) * st.sceneScale;
+      const heroY = (st.isPortraitMobile ? baseCenterY + 22.0 : baseCenterY) * st.sceneScale;
       const heroZ = 8.0;
-      const heroScale = st.sceneScale * 0.88;
+      const heroScale = st.sceneScale * (st.isPortraitMobile ? 0.84 : 0.88);
 
       if (st.choreoActive && st.choreoType === 'INSPECT_SWAP') {
         // --- SMOOTH OUT-OF-PLAYER CASSETTE REPLACEMENT GLIDE (ZERO IN-PLACE ROTATION!) ---
@@ -2461,7 +3262,7 @@ export default function DeckStage() {
         // --- SMOOTH CIRCULAR ORBIT ANIMATION FROM PLAYER BAY TO MAIN CASSETTE VIEW ---
         // Compensates for the player's leftward shift so X progresses smoothly without stalling,
         // while Y and Z trace a clean circular arc and orientation slerps with zero in-place wobble!
-        const cancelPlayerShiftX = 76.0 * centerBlend * (1.0 - centerBlend) * st.sceneScale;
+        const cancelPlayerShiftX = -ejectShiftX * centerBlend * (1.0 - centerBlend) * st.sceneScale;
         const circleX = cancelPlayerShiftX + orbitSin * 12.0 * st.sceneScale;
         const circleY = -orbitSin * 20.0 * st.sceneScale;
         const circleZ = orbitSin * 28.0;
@@ -2610,13 +3411,31 @@ export default function DeckStage() {
       }
     }, 250);
 
+    // Pre-compile WebGL shaders before starting the 60fps rAF loop to prevent a long first-frame rAF violation
+    renderer.compile(scene, camera);
+    lastTime = performance.now();
     rafId = requestAnimationFrame(animate);
-    setReady(true);
 
-    // Pre-fetch recommended tracks so the Recommended queue is ready immediately
-    stageApiRef.current.fetchMoreRecommendations?.(initialActiveItem, { append: false });
+    // Pre-fetch the initial song stream AND recommended tracks during the main Krystal KD-01 loading screen
+    // (with a 2.2s safety timeout so the studio stage always opens smoothly even if offline)
+    let disposed = false;
+    const bootPreloadPromise = Promise.allSettled([
+      initialActiveItem?.streamUrl
+        ? audio.prewarmStreamUrl(initialActiveItem.streamUrl)
+        : Promise.resolve(null),
+      stageApiRef.current.fetchMoreRecommendations?.(initialActiveItem, { append: false }),
+    ]);
+    const bootTimeoutPromise = new Promise((resolve) => setTimeout(resolve, 2200));
+
+    Promise.race([bootPreloadPromise, bootTimeoutPromise]).finally(() => {
+      if (!disposed) {
+        setSongProgress(audio.getCustomAudioProgress());
+        setReady(true);
+      }
+    });
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(rafId);
       clearInterval(bgIntervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -2663,7 +3482,7 @@ export default function DeckStage() {
     const normalized = nextMode === 'recommended' ? 'recommended' : 'saved';
     queueModeRef.current = normalized;
     setQueueMode(normalized);
-    savePrefsToStorage({ queueMode: normalized });
+    savePrefsToStorage({ queueMode: normalized, queueModeV2: normalized });
     engineRef.current?.playMechanicalClick('button');
 
     if (normalized === 'recommended') {
@@ -2865,79 +3684,96 @@ export default function DeckStage() {
   }, []);
 
   /**
-   * Plays an online song in the 3D Cassette Player WITHOUT adding it to the Left Cassette Collection!
+   * Plays an online song in the 3D Cassette Player WITHOUT adding it to the Left Cassette Collection,
+   * switches the queue to Recommended by default, and refreshes recommended suggestions based on the searched song!
    */
-  const handlePlayOnlineTrack = useCallback(async (track) => {
-    if (!track) return;
+  const handlePlayOnlineTrack = useCallback(
+    async (track) => {
+      if (!track) return;
 
-    // 1. Synchronously unlock WebAudio + HTMLAudioElement / YouTube Player inside the user's click gesture BEFORE any await!
-    setAudioUnlocked(true);
-    engineRef.current?.unlockAudioGesture(
-      track.streamUrl || null,
-      track.youtubeId || null,
-      track.backupYoutubeIds || []
-    );
+      // 1. Synchronously unlock WebAudio + HTMLAudioElement / YouTube Player inside the user's click gesture BEFORE any await!
+      setAudioUnlocked(true);
+      engineRef.current?.unlockAudioGesture(
+        track.streamUrl || null,
+        track.youtubeId || null,
+        track.backupYoutubeIds || []
+      );
 
-    // 2. If this song is already in the user's cassette collection, just play that cassette without adding anything
-    const existing = cassetteListRef.current.find(
-      (c) =>
-        c.onlineTrackId === track.id ||
-        c.externalId === track.id ||
-        (track.youtubeId && c.youtubeId === track.youtubeId) ||
-        (c.title.toLowerCase() === track.title.toLowerCase() &&
-          c.artist.toLowerCase() === track.artist.toLowerCase())
-    );
-    if (existing) {
-      if (track.streamUrl && !existing.streamUrl) {
-        existing.streamUrl = track.streamUrl;
+      // 2. Ensure Recommended auto-play mode is active and immediately refresh recommendations based on this searched song!
+      queueModeRef.current = 'recommended';
+      setQueueMode('recommended');
+      savePrefsToStorage({ queueMode: 'recommended', queueModeV2: 'recommended' });
+      if (!autoMode) {
+        stageApiRef.current.toggleAutoMode?.();
       }
-      if (track.youtubeId && !existing.youtubeId) {
-        existing.youtubeId = track.youtubeId;
-        existing.backupYoutubeIds = track.backupYoutubeIds || [];
-      }
-      existing.onlineTrackId = track.id;
-      saveCollectionToStorage(cassetteListRef.current);
-      stageApiRef.current.changeCassetteById?.(existing.id, { forcePlay: true });
-      return;
-    }
-
-    // 3. If this song is already loaded as the active transient cassette, just trigger play on it
-    const curTransient = transientCassetteRef.current;
-    if (
-      curTransient &&
-      (curTransient.onlineTrackId === track.id ||
-        curTransient.externalId === track.id ||
-        (track.youtubeId && curTransient.youtubeId === track.youtubeId) ||
-        (curTransient.title.toLowerCase() === track.title.toLowerCase() &&
-          curTransient.artist.toLowerCase() === track.artist.toLowerCase()))
-    ) {
-      stageApiRef.current.changeCassetteById?.(curTransient.id, { forcePlay: true });
-      return;
-    }
-
-    setPlayingTrackId(track.id);
-    try {
-      const rawCover = track.coverUrl || track.thumbUrl || null;
-      const { img: loadedImg, resolvedUrl } = await loadCoverImageWithFallback(rawCover);
-
-      stageApiRef.current.playTransientOnlineTrack?.({
-        externalId: track.id,
-        onlineTrackId: track.id,
-        title: track.title || 'Online Track',
-        artist: track.artist || 'Featured Artist',
-        sourceType: track.sourceType || (track.streamUrl ? 'online' : 'youtube'),
-        streamUrl: track.streamUrl || null,
-        youtubeId: track.youtubeId || null,
-        backupYoutubeIds: track.backupYoutubeIds || [],
-        durationSec: track.durationSec || 210,
-        coverImg: loadedImg,
-        coverUrl: resolvedUrl || rawCover,
-        accentColor: track.accentColor || '#ff3b1f',
+      stageApiRef.current.fetchMoreRecommendations?.(track, {
+        append: false,
+        searchContextResults: searchResults,
+        searchContextQuery: searchQuery,
       });
-    } finally {
-      setPlayingTrackId(null);
-    }
-  }, []);
+
+      // 3. If this song is already in the user's cassette collection, just play that cassette without adding anything
+      const existing = cassetteListRef.current.find(
+        (c) =>
+          c.onlineTrackId === track.id ||
+          c.externalId === track.id ||
+          (track.youtubeId && c.youtubeId === track.youtubeId) ||
+          (c.title.toLowerCase() === track.title.toLowerCase() &&
+            c.artist.toLowerCase() === track.artist.toLowerCase())
+      );
+      if (existing) {
+        if (track.streamUrl && !existing.streamUrl) {
+          existing.streamUrl = track.streamUrl;
+        }
+        if (track.youtubeId && !existing.youtubeId) {
+          existing.youtubeId = track.youtubeId;
+          existing.backupYoutubeIds = track.backupYoutubeIds || [];
+        }
+        existing.onlineTrackId = track.id;
+        saveCollectionToStorage(cassetteListRef.current);
+        stageApiRef.current.changeCassetteById?.(existing.id, { forcePlay: true });
+        return;
+      }
+
+      // 4. If this song is already loaded as the active transient cassette, just trigger play on it
+      const curTransient = transientCassetteRef.current;
+      if (
+        curTransient &&
+        (curTransient.onlineTrackId === track.id ||
+          curTransient.externalId === track.id ||
+          (track.youtubeId && curTransient.youtubeId === track.youtubeId) ||
+          (curTransient.title.toLowerCase() === track.title.toLowerCase() &&
+            curTransient.artist.toLowerCase() === track.artist.toLowerCase()))
+      ) {
+        stageApiRef.current.changeCassetteById?.(curTransient.id, { forcePlay: true });
+        return;
+      }
+
+      setPlayingTrackId(track.id);
+      try {
+        const rawCover = track.coverUrl || track.thumbUrl || null;
+        const { img: loadedImg, resolvedUrl } = await loadCoverImageWithFallback(rawCover);
+
+        stageApiRef.current.playTransientOnlineTrack?.({
+          externalId: track.id,
+          onlineTrackId: track.id,
+          title: track.title || 'Online Track',
+          artist: track.artist || 'Featured Artist',
+          sourceType: track.sourceType || (track.streamUrl ? 'online' : 'youtube'),
+          streamUrl: track.streamUrl || null,
+          youtubeId: track.youtubeId || null,
+          backupYoutubeIds: track.backupYoutubeIds || [],
+          durationSec: track.durationSec || 210,
+          coverImg: loadedImg,
+          coverUrl: resolvedUrl || rawCover,
+          accentColor: track.accentColor || '#ff3b1f',
+        });
+      } finally {
+        setPlayingTrackId(null);
+      }
+    },
+    [autoMode, searchResults, searchQuery]
+  );
 
   // --- Custom Song Handlers (Local Audio Files + YouTube Links + Spotify Links) ---
   const handleSelectAudioFile = useCallback(async (file) => {
@@ -3183,10 +4019,164 @@ export default function DeckStage() {
     cassetteList.find((c) => c.id === activeCassetteId) ||
     recommendedList.find((c) => c.id === activeCassetteId) ||
     (transientCassette && transientCassette.id === activeCassetteId ? transientCassette : null) ||
+    (activeCassetteObjRef.current && activeCassetteObjRef.current.id === activeCassetteId
+      ? activeCassetteObjRef.current
+      : null) ||
     cassetteList[0] ||
     CASSETTES[0];
 
+  const isFetchingTrackData =
+    Boolean(songProgress.isFetching) ||
+    (Boolean(activeCassette?.streamUrl || activeCassette?.youtubeId) &&
+      !(songProgress.duration > 0));
+
   const effectiveVolPct = Math.round((muted ? 0 : volume) * 100);
+
+  // --- Mobile-Responsive Drawer Toggle Coordination (Never overlap drawers on narrow viewports) ---
+  const handleToggleLeftPanel = useCallback(() => {
+    setLeftPanelOpen((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined' && window.innerWidth <= 820) {
+        if (next) setRightPanelOpen(false);
+      } else {
+        savePrefsToStorage({ leftPanelOpen: next });
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleRightPanel = useCallback(() => {
+    setRightPanelOpen((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined' && window.innerWidth <= 820) {
+        if (next) setLeftPanelOpen(false);
+      } else {
+        savePrefsToStorage({ rightPanelOpen: next });
+      }
+      return next;
+    });
+  }, []);
+
+  const handleCloseMobilePanels = useCallback(() => {
+    setLeftPanelOpen(false);
+    setRightPanelOpen(false);
+  }, []);
+
+  // --- Full Web Media Session API (Mobile Lock-Screen & Background Notification Controls: Play, Pause, Next, Back, Seek) ---
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || !activeCassette) {
+      return;
+    }
+
+    const artSrc =
+      activeCassette.coverUrl ||
+      activeCassette.thumbUrl ||
+      activeCassette.cassetteUrl ||
+      activeCassette.art ||
+      '';
+
+    try {
+      const artwork = artSrc
+        ? [
+            { src: artSrc, sizes: '96x96', type: 'image/jpeg' },
+            { src: artSrc, sizes: '192x192', type: 'image/jpeg' },
+            { src: artSrc, sizes: '512x512', type: 'image/jpeg' },
+          ]
+        : [];
+
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: activeCassette.title || 'Krystal KD-01 Track',
+        artist: activeCassette.artist || 'Krystal Audio Lab',
+        album: 'Krystal KD-01',
+        artwork,
+      });
+    } catch {
+      // Ignore MediaMetadata errors on older browsers
+    }
+
+    const actionHandlers = [
+      ['play', () => stageApiRef.current.setTransport?.('PLAY')],
+      ['pause', () => stageApiRef.current.setTransport?.('PAUSE')],
+      ['stop', () => stageApiRef.current.setTransport?.('STOP')],
+      [
+        'previoustrack',
+        () => stageApiRef.current.playPrevCassette?.({ fromMediaSession: true }),
+      ],
+      [
+        'nexttrack',
+        () => stageApiRef.current.playNextCassette?.({ fromMediaSession: true }),
+      ],
+      [
+        'seekbackward',
+        (details) => engineRef.current?.seekByOffset(-(details?.seekOffset || 10)),
+      ],
+      [
+        'seekforward',
+        (details) => engineRef.current?.seekByOffset(details?.seekOffset || 10),
+      ],
+      [
+        'seekto',
+        (details) => {
+          if (typeof details?.seekTime === 'number') {
+            engineRef.current?.seekToSeconds(details.seekTime);
+            setSongProgress(engineRef.current?.getCustomAudioProgress() || { currentTime: 0, duration: 0, progress: 0 });
+          }
+        },
+      ],
+    ];
+
+    for (const [action, handler] of actionHandlers) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {
+        // Unsupported action on this OS/browser
+      }
+    }
+  }, [activeCassette]);
+
+  // Sync MediaSession Playback State + Document Title ("Krystal KD-01")
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const isPlayingNow =
+        transportMode === 'PLAY' && !isChangingCassette && !tapeEjected && !dismantled;
+      document.title =
+        isPlayingNow && activeCassette?.title
+          ? `${activeCassette.title} · ${activeCassette.artist} | Krystal KD-01`
+          : 'Krystal KD-01 — 3D Studio Cassette Player';
+    }
+
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.playbackState =
+          transportMode === 'PLAY' ? 'playing' : 'paused';
+      } catch {
+        // Ignore
+      }
+    }
+  }, [transportMode, isChangingCassette, tapeEjected, dismantled, activeCassette]);
+
+  // Sync MediaSession Position State so mobile Lock Screen / Notification Scrubber shows live track progress
+  useEffect(() => {
+    if (
+      typeof navigator !== 'undefined' &&
+      'mediaSession' in navigator &&
+      typeof navigator.mediaSession.setPositionState === 'function'
+    ) {
+      const dur = Number(songProgress.duration) || 0;
+      const pos = Number(songProgress.currentTime) || 0;
+      if (dur > 0 && isFinite(dur) && isFinite(pos)) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: dur,
+            playbackRate: 1.0,
+            position: Math.max(0, Math.min(dur, pos)),
+          });
+        } catch {
+          // Ignore transient position range errors
+        }
+      }
+    }
+  }, [songProgress.currentTime, songProgress.duration]);
 
   return (
     <main
@@ -3196,12 +4186,55 @@ export default function DeckStage() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      {/* Krystal KD-01 Initial Studio Hardware Boot / Loading Screen Overlay */}
+      <div
+        className="kd-boot-screen kd-boot-overlay"
+        data-ready={ready || undefined}
+        aria-hidden={ready || undefined}
+      >
+        <div className="kd-boot-card">
+          <div className="kd-boot-cassette" aria-hidden="true">
+            <div className="kd-boot-window">
+              <span className="kd-boot-reel kd-boot-reel-l" />
+              <span className="kd-boot-tape-bridge" />
+              <span className="kd-boot-reel kd-boot-reel-r" />
+            </div>
+            <div className="kd-boot-head-slot" />
+          </div>
+          <div className="kd-boot-meta">
+            <div className="kd-boot-badge-row">
+              <span className="kd-boot-led" />
+              <span className="kd-boot-series">STUDIO HARDWARE SERIES</span>
+            </div>
+            <h1 className="kd-boot-title">Krystal KD-01</h1>
+            <p className="kd-boot-sub">
+              Calibrating 3D optical deck &amp; fetching initial audio stream…
+            </p>
+          </div>
+          <div className="kd-boot-bar-track" aria-hidden="true">
+            <div className="kd-boot-bar-fill" />
+          </div>
+        </div>
+      </div>
+
       {/* 3D WebGL Studio Stage */}
       <div ref={containerRef} className="kd-stage" />
+
+      {/* Mobile Drawer Backdrop (Tap outside on mobile to dismiss open drawer) */}
+      {(leftPanelOpen || rightPanelOpen) && (
+        <div
+          className="kd-mobile-drawer-backdrop"
+          onClick={handleCloseMobilePanels}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Top Studio Status & Universal Audio Scrubber Pill */}
       <header className="kd-top-bar">
         <div className="kd-top-track">
+          <span className="kd-brand-pill" title="Krystal KD-01 Studio Cassette Player">
+            KD-01
+          </span>
           <span
             className="kd-meta-dot"
             data-live={
@@ -3238,23 +4271,30 @@ export default function DeckStage() {
           <span className="kd-meta-artist">{activeCassette.artist}</span>
         </div>
 
-        {(songProgress.duration > 0 || activeCassette?.spotifyId) && (
+        {(isFetchingTrackData || songProgress.duration > 0 || activeCassette?.spotifyId) && (
           <div className="kd-top-scrubber">
-            {songProgress.duration > 0 && (
-              <>
-                <span className="kd-np-time">{formatTime(songProgress.currentTime)}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.001"
-                  value={songProgress.progress || 0}
-                  onChange={(e) => engineRef.current?.seekCustomAudio(parseFloat(e.target.value))}
-                  className="kd-np-scrubber"
-                  aria-label="Seek track"
-                />
-                <span className="kd-np-time">{formatTime(songProgress.duration)}</span>
-              </>
+            {isFetchingTrackData ? (
+              <span className="kd-fetching-pill" role="status" aria-live="polite">
+                <span className="kd-fetching-dot" aria-hidden="true" />
+                <span>Fetching data…</span>
+              </span>
+            ) : (
+              songProgress.duration > 0 && (
+                <>
+                  <span className="kd-np-time">{formatTime(songProgress.currentTime)}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.001"
+                    value={songProgress.progress || 0}
+                    onChange={(e) => engineRef.current?.seekCustomAudio(parseFloat(e.target.value))}
+                    className="kd-np-scrubber"
+                    aria-label="Seek track"
+                  />
+                  <span className="kd-np-time">{formatTime(songProgress.duration)}</span>
+                </>
+              )
             )}
             {activeCassette?.spotifyId && (
               <button
@@ -3297,6 +4337,46 @@ export default function DeckStage() {
                   : ''
               }`}
         </span>
+
+        <div className="kd-top-socials">
+          <a
+            href="https://github.com/Adit-yah/krystal-deck"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="kd-top-github-link"
+            data-label="View on Github"
+            aria-label="View on Github"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M12 0.297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+            </svg>
+          </a>
+
+          <a
+            href="https://x.com/Adidotdev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="kd-top-github-link"
+            data-label="Follow on X"
+            aria-label="Follow on X"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="13"
+              height="13"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+          </a>
+        </div>
       </header>
 
       {/* ==================== LEFT STUDIO PANEL: CASSETTE COLLECTION & AUTO-SWITCH QUEUE ==================== */}
@@ -3308,13 +4388,7 @@ export default function DeckStage() {
         <button
           type="button"
           className="kd-panel-edge-toggle kd-left-toggle"
-          onClick={() =>
-            setLeftPanelOpen((v) => {
-              const next = !v;
-              savePrefsToStorage({ leftPanelOpen: next });
-              return next;
-            })
-          }
+          onClick={handleToggleLeftPanel}
           title={leftPanelOpen ? 'Collapse cassette collection' : 'Open cassette collection'}
           aria-label="Toggle cassette collection panel"
         >
@@ -3333,9 +4407,18 @@ export default function DeckStage() {
                   {queueMode === 'recommended' ? recommendedList.length : cassetteList.length}
                 </span>
               </div>
-              <p className="kd-panel-sub">
+              <p
+                className="kd-panel-sub"
+                title={
+                  queueMode === 'recommended' && recSeedLabel
+                    ? `Smart song radio based on ${recSeedLabel}`
+                    : undefined
+                }
+              >
                 {queueMode === 'recommended'
-                  ? 'Continuous recommended auto-play'
+                  ? recSeedLabel
+                    ? `Based on ${recSeedLabel}`
+                    : 'Continuous recommended auto-play'
                   : 'Saved automatically · Auto-plays next'}
               </p>
             </div>
@@ -3367,6 +4450,16 @@ export default function DeckStage() {
               >
                 <span className="kd-auto-dot" data-on={autoMode || undefined} aria-hidden="true" />
                 <span>Auto {autoMode ? 'on' : 'off'}</span>
+              </button>
+
+              {/* Mobile Panel Close Button */}
+              <button
+                type="button"
+                className="kd-panel-mobile-close"
+                onClick={handleToggleLeftPanel}
+                aria-label="Close cassette collection panel"
+              >
+                ✕
               </button>
             </div>
           </div>
@@ -3457,11 +4550,15 @@ export default function DeckStage() {
                       setDraggedCassetteIdx(null);
                     }}
                     onDragEnd={() => setDraggedCassetteIdx(null)}
-                    onClick={() => stageApiRef.current.changeCassetteById?.(cas.id)}
+                    onClick={() => {
+                      stageApiRef.current.changeCassetteById?.(cas.id);
+                      stageApiRef.current.fetchMoreRecommendations?.(cas, { append: false });
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
                         stageApiRef.current.changeCassetteById?.(cas.id);
+                        stageApiRef.current.fetchMoreRecommendations?.(cas, { append: false });
                       }
                     }}
                   >
@@ -3586,13 +4683,19 @@ export default function DeckStage() {
                       className="kd-cassette-item"
                       data-active={isCurrent || undefined}
                       data-playing={isPlayingNow || undefined}
-                      onClick={() =>
-                        stageApiRef.current.changeCassetteById?.(cas.id, { forcePlay: true })
-                      }
+                      onClick={() => {
+                        stageApiRef.current.changeCassetteById?.(cas.id, { forcePlay: true });
+                        if (recommendedList.length - idx <= 3) {
+                          stageApiRef.current.fetchMoreRecommendations?.(cas, { append: true });
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           stageApiRef.current.changeCassetteById?.(cas.id, { forcePlay: true });
+                          if (recommendedList.length - idx <= 3) {
+                            stageApiRef.current.fetchMoreRecommendations?.(cas, { append: true });
+                          }
                         }
                       }}
                     >
@@ -3750,13 +4853,7 @@ export default function DeckStage() {
         <button
           type="button"
           className="kd-panel-edge-toggle kd-right-toggle"
-          onClick={() =>
-            setRightPanelOpen((v) => {
-              const next = !v;
-              savePrefsToStorage({ rightPanelOpen: next });
-              return next;
-            })
-          }
+          onClick={handleToggleRightPanel}
           title={rightPanelOpen ? 'Collapse online song search' : 'Open online song search'}
           aria-label="Toggle online song search panel"
         >
@@ -3775,6 +4872,15 @@ export default function DeckStage() {
               </div>
               <p className="kd-panel-sub">Search any song or artist &amp; add to your cassette rack</p>
             </div>
+
+            <button
+              type="button"
+              className="kd-panel-mobile-close"
+              onClick={handleToggleRightPanel}
+              aria-label="Close online song search panel"
+            >
+              ✕
+            </button>
           </div>
 
           {/* Search Input Form */}
@@ -4314,27 +5420,17 @@ export default function DeckStage() {
         </button>
       </nav>
 
-      {/* Creator Signature Mark (Clickable Adit-Yah -> https://x.com/Adidotdev) */}
+      {/* Creator Watermark Below Bottom Nav (Clickable Adit-Yah -> https://x.com/Adidotdev) */}
       <div className="kd-creator-mark">
-        <span>Made by</span>
+        <span>Made by </span>
         <a
           href="https://x.com/Adidotdev"
           target="_blank"
           rel="noopener noreferrer"
           className="kd-creator-link"
-          title="Visit Adit-Yah on X (@Adidotdev)"
+          title="Follow Adit-Yah on X (@Adidotdev)"
         >
-          <span>Adit-Yah</span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
-            className="kd-creator-x-icon"
-          >
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
+          Adit-Yah
         </a>
       </div>
 

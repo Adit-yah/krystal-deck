@@ -293,16 +293,48 @@ function artistsOverlap(a = '', b = '') {
   return wordsA.some((w) => wordsB.includes(w));
 }
 
+function isSafeExternalHttpUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string' || rawUrl.length > 2048) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '0.0.0.0' ||
+      host === '[::1]' ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal') ||
+      /^127\./.test(host) ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchImageAsDataUrl(imgUrl) {
-  if (!imgUrl) return null;
+  if (!isSafeExternalHttpUrl(imgUrl)) return null;
   try {
     const res = await fetch(imgUrl, {
       headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(7500),
     });
     if (!res.ok) return null;
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const buf = Buffer.from(await res.arrayBuffer());
-    return `data:${contentType};base64,${buf.toString('base64')}`;
+    const contentType = (res.headers.get('content-type') || 'image/jpeg').toLowerCase();
+    if (!contentType.startsWith('image/')) return null;
+    const contentLen = Number(res.headers.get('content-length') || 0);
+    if (contentLen > 5 * 1024 * 1024) return null;
+    const ab = await res.arrayBuffer();
+    if (ab.byteLength > 5 * 1024 * 1024) return null;
+    const buf = Buffer.from(ab);
+    return `data:${contentType.split(';')[0]};base64,${buf.toString('base64')}`;
   } catch {
     return null;
   }
@@ -687,14 +719,22 @@ export async function GET(request) {
   // 1B. Optional Same-Origin Audio Stream Proxy (?stream=<audioUrl>)
   const streamToProxy = searchParams.get('stream');
   if (streamToProxy) {
+    if (!isSafeExternalHttpUrl(streamToProxy)) {
+      return new NextResponse('Invalid stream URL', { status: 400 });
+    }
     try {
       const upstream = await fetch(streamToProxy, {
         headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(10000),
       });
       if (!upstream.ok) {
         return new NextResponse('Upstream audio unavailable', { status: 502 });
       }
       const contentType = upstream.headers.get('content-type') || 'audio/mp4';
+      const contentLen = Number(upstream.headers.get('content-length') || 0);
+      if (contentLen > 25 * 1024 * 1024) {
+        return new NextResponse('Stream payload too large', { status: 413 });
+      }
       const arrayBuf = await upstream.arrayBuffer();
       return new NextResponse(arrayBuf, {
         status: 200,
@@ -710,7 +750,7 @@ export async function GET(request) {
   }
 
   // 2. Search Online Songs
-  const rawQuery = (searchParams.get('q') || '').trim();
+  const rawQuery = (searchParams.get('q') || '').trim().slice(0, 120);
   const subQueries = resolveItunesSubQueries(rawQuery);
   const query = subQueries[0] || rawQuery || 'The Weeknd';
 
@@ -964,11 +1004,18 @@ export async function GET(request) {
       accentColor: ACCENT_PALETTE[idx % ACCENT_PALETTE.length],
     }));
 
-    return NextResponse.json({
-      ok: true,
-      query: rawQuery || query,
-      results: finalResults,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        query: rawQuery || query,
+        results: finalResults,
+      },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        },
+      }
+    );
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err?.message || 'Search failed', results: [] },
